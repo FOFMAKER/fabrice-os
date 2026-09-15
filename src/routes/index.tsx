@@ -83,7 +83,7 @@ const COMMANDS = [
   { cmd: "writing", out: "→ 4 drafts in progress", target: "writing" },
   { cmd: "book", out: "→ Product Book · 5 chapters", target: "book" },
   { cmd: "about", out: "→ positioning + evidence", target: "about" },
-  { cmd: "contact", out: "github.com/ffidel · febreazy@gmail.com", target: "footer" },
+  { cmd: "contact", out: "github.com/FOFMAKER · febreazy@gmail.com", target: "footer" },
   { cmd: "theme", out: "→ toggling theme", target: null },
 ] as const;
 
@@ -242,7 +242,7 @@ function Index() {
           </a>
           , a live parking product that turns a QR scan into occupancy, floor memory, and a way back to your car. Say
           hi on{" "}
-          <a href="https://github.com/ffidel" target="_blank" rel="noreferrer" className="link-underline">
+          <a href="https://github.com/FOFMAKER" target="_blank" rel="noreferrer" className="link-underline">
             GitHub
           </a>{" "}
           or{" "}
@@ -513,7 +513,7 @@ function Index() {
           <span className="font-mono text-[11px] text-muted-ink">{time || "—"}</span>
           <div className="flex items-center gap-3">
             <a
-              href="https://github.com/ffidel"
+              href="https://github.com/FOFMAKER"
               target="_blank"
               rel="noreferrer"
               aria-label="GitHub"

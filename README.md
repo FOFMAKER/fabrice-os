@@ -10,7 +10,7 @@ It is a **standalone project**. It does not live in ParkTracker.
 
 - Site: https://buildwithfabrice.com
 - Also: https://buildwithfabrice.io
-- GitHub: https://github.com/ffidel/fabrice-os
+- GitHub: https://github.com/FOFMAKER/fabrice-os
 - Lovable workshop: https://lovable.dev/projects/0a9a8615-982e-4604-927d-4955ce77cd73
 
 ## Local
