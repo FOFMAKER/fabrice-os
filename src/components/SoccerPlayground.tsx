@@ -59,6 +59,7 @@ function prefersReducedMotion() {
 }
 
 function clamp(n: number, min: number, max: number) {
+  if (max < min) return min;
   return Math.min(max, Math.max(min, n));
 }
 
@@ -88,16 +89,16 @@ function sitDeskX() {
 }
 
 function goalX(w: number) {
-  const min = deskX() + DESK_W + 24;
-  const max = w - STUDIO_W - GOAL_W - 24;
+  const min = deskX() + DESK_W + 16;
+  const max = w - STUDIO_W - GOAL_W - 10;
   if (mailAlignX != null) {
     return clamp(mailAlignX - GOAL_W / 2, min, max);
   }
-  return clamp(w * 0.62, min, max);
+  return clamp(w * 0.58, min, max);
 }
 
 function studioX(w: number) {
-  return clamp(goalX(w) + GOAL_W + 16, deskX() + DESK_W + GOAL_W + 28, w - STUDIO_W - 8);
+  return clamp(goalX(w) + GOAL_W + 12, deskX() + DESK_W + GOAL_W + 20, w - STUDIO_W - 4);
 }
 
 function sitStudioX(w: number) {
@@ -118,7 +119,7 @@ function readLayout(playground: HTMLElement | null, mailEl?: HTMLElement | null)
   const footer = document.querySelector("footer");
   if (footer) {
     const f = footer.getBoundingClientRect();
-    colLeftX = clamp(f.left - pg.left, 8, Math.max(8, playground.clientWidth - 220));
+    colLeftX = clamp(f.left - pg.left, 0, Math.max(0, playground.clientWidth - 220));
   } else {
     colLeftX = estimateColLeft();
   }
@@ -682,7 +683,7 @@ export function SoccerPlayground({
 
   return (
     <>
-      <div className="relative left-1/2 mt-4 w-screen max-w-[100vw] -translate-x-1/2 px-4 sm:px-8">
+      <div className="relative mt-4 w-full overflow-x-clip">
         <div
           ref={root}
           className="relative h-48 w-full select-none touch-none"

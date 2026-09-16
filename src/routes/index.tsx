@@ -185,36 +185,37 @@ function Index() {
   const currentChapter = BOOK.find((c) => c.id === chapter) ?? BOOK[0]!;
 
   return (
-    <main className="mx-auto w-full max-w-[600px] px-5 pb-10 pt-16 sm:px-6 sm:pt-24">
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
+    <main className="mx-auto w-full min-w-0 max-w-[600px] px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-12 sm:px-6 sm:pt-24">
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface">
             <div className="h-4 w-4 rounded-[3px] border border-ink/70">
               <div className="m-[3px] h-1.5 w-1.5 rounded-[1px] bg-ink/80" />
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <AnimatedName text="Fabrice Fidel" />
-            <p className="mt-1.5 text-[12px] leading-none text-muted-ink">
+            <p className="mt-1.5 text-[12px] leading-[16px] text-muted-ink">
               Product Designer · Product Builder · Technical Innovator
             </p>
             <p className="mt-1.5 font-mono text-[11px] leading-none text-muted-ink">Updated Sep 2026</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <span
             aria-disabled="true"
             title="Résumé (coming soon)"
-            className="flex cursor-default items-center gap-1 rounded-md bg-surface px-2 py-1.5 font-mono text-[11px] text-muted-ink"
+            className="hidden cursor-default items-center gap-1 rounded-md bg-surface px-2 py-1.5 font-mono text-[11px] text-muted-ink sm:flex"
           >
             résumé <ArrowDownToLine size={11} />
           </span>
           <button
             onClick={() => setOpen(true)}
             aria-label="Open command menu"
-            className="icon-btn rounded-md bg-surface px-2 py-1.5 font-mono text-[11px]"
+            className="icon-btn rounded-md bg-surface px-2.5 py-1.5 font-mono text-[11px]"
           >
-            ⌘K
+            <span className="sm:hidden">cmd</span>
+            <span className="hidden sm:inline">⌘K</span>
           </button>
           <button
             onClick={() => setMuted((v) => !v)}
@@ -294,17 +295,17 @@ function Index() {
       <div className="mt-6 space-y-8">
         {WORK.map((job, idx) => (
           <div key={job.company} className={idx > 0 ? "dotted-rule pt-8" : ""}>
-            <div className="flex gap-6">
-              <span className="w-[88px] shrink-0 font-mono text-[11px] leading-[20px] text-muted-ink">{job.date}</span>
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+              <span className="w-auto shrink-0 font-mono text-[11px] leading-[20px] text-muted-ink sm:w-[88px]">{job.date}</span>
               <div className="min-w-0 flex-1">
                 <h3 className="grow-underline inline-block cursor-default text-[14px] font-medium leading-[20px]">
                   {job.company}
                 </h3>
                 <ul className="mt-4 space-y-3">
                   {job.rows.map(([text, tag]) => (
-                    <li key={text} className="flex items-baseline gap-4">
-                      <span className="flex-1 text-[14px] leading-[20px]">{text}</span>
-                      <span className="shrink-0 font-mono text-[11px] text-muted-ink">{tag}</span>
+                    <li key={text} className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-4">
+                      <span className="text-[14px] leading-[20px] sm:flex-1">{text}</span>
+                      <span className="font-mono text-[11px] text-muted-ink sm:shrink-0">{tag}</span>
                     </li>
                   ))}
                 </ul>
@@ -456,9 +457,9 @@ function Index() {
       <SectionLabel label="WRITING" id="writing" />
       <ul className="mt-6 space-y-3">
         {WRITING.map((n) => (
-          <li key={n} className="flex items-baseline gap-4 text-muted-ink">
-            <span className="flex-1 text-[14px] leading-[20px]">{n}</span>
-            <span className="shrink-0 font-mono text-[11px]">draft</span>
+          <li key={n} className="flex flex-col gap-0.5 text-muted-ink sm:flex-row sm:items-baseline sm:gap-4">
+            <span className="text-[14px] leading-[20px] sm:flex-1">{n}</span>
+            <span className="font-mono text-[11px] sm:shrink-0">draft</span>
           </li>
         ))}
       </ul>
@@ -509,8 +510,8 @@ function Index() {
       </div>
 
       <footer id="footer" className="dotted-rule mt-20 pt-6">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] text-muted-ink">{time || "—"}</span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="min-w-0 font-mono text-[11px] text-muted-ink">{time || "—"}</span>
           <div className="flex items-center gap-3">
             <a
               href="https://github.com/FOFMAKER"

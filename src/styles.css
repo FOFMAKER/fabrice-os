@@ -167,7 +167,6 @@
   html {
     scroll-behavior: smooth;
     background-color: var(--paper);
-    overflow-x: hidden;
   }
   body {
     background-color: var(--paper);
@@ -175,6 +174,20 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.011em;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  @media (pointer: coarse) {
+    .chip {
+      padding: 8px 10px;
+    }
+    .icon-btn {
+      display: inline-flex;
+      min-width: 36px;
+      min-height: 36px;
+      align-items: center;
+      justify-content: center;
+    }
   }
   ::selection {
     background: color-mix(in oklab, var(--action) 30%, transparent);
