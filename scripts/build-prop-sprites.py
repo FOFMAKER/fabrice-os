@@ -144,6 +144,19 @@ def lamp(on: bool) -> Image.Image:
     c.hline(5, 5, 17, BRASS_HI)
     if on:
         c.fill(12, 24, 3, 3, (255, 228, 150, 255))
+        # warm pixel cone under the shade
+        for i, y in enumerate(range(26, 58)):
+            t = i / 32
+            half = int(5 + t * 9)
+            fade = 1 - t
+            for x in range(13 - half, 13 + half + 1):
+                fall = 1 - abs(x - 13) / max(half, 1) * 0.55
+                a = int(88 * fade * fall)
+                if a < 10:
+                    continue
+                prev = c.a[y, x] if 0 <= x < c.w and 0 <= y < c.h else (0, 0, 0, 0)
+                if prev[3] == 0:
+                    c.put(x, y, (236, 196, 96, min(110, a)))
     else:
         c.fill(12, 24, 3, 2, INK)
     return c.image()
@@ -225,93 +238,75 @@ def desk(coding: bool) -> Image.Image:
 
 
 def studio(playing: bool) -> Image.Image:
-    c = C(154, 90)
-    c.shadow(78, 87, 52, 2)
-    # desk legs
-    for x in (18, 118):
-        c.fill(x, 52, 5, 34, WOOD_LO)
-        c.vline(x, 52, 34, WOOD)
-        c.vline(x + 4, 52, 34, WOOD_DK)
-        c.fill(x - 1, 83, 7, 3, WOOD_DK)
-    # top
-    c.fill(12, 48, 118, 6, WOOD)
-    c.hline(12, 48, 118, WOOD_HI)
-    c.hline(12, 53, 118, WOOD_LO)
-    c.fill(14, 54, 114, 4, WOOD_LO)
+    """Speaker, keyboard, headphones — no extra stands."""
+    c = C(108, 72)
+    c.shadow(54, 69, 40, 2)
+    for x in (12, 86):
+        c.fill(x, 42, 5, 26, WOOD_LO)
+        c.vline(x, 42, 26, WOOD)
+        c.vline(x + 4, 42, 26, WOOD_DK)
+        c.fill(x - 1, 65, 7, 3, WOOD_DK)
+    c.fill(8, 38, 92, 6, WOOD)
+    c.hline(8, 38, 92, WOOD_HI)
+    c.hline(8, 43, 92, WOOD_LO)
+    c.fill(10, 44, 88, 3, WOOD_LO)
     # speaker
-    c.fill(18, 26, 18, 24, INK)
-    c.fill(19, 27, 16, 22, INK_MID)
-    c.ellipse(27, 38, 5, 5, INK)
-    c.ellipse(27, 38, 3, 3, CREAM_LO)
-    c.ellipse(27, 38, 1, 1, CREAM_HI)
-    c.fill(22, 30, 8, 2, RED if playing else INK_HI)
-    # mixer / keys
-    c.fill(42, 42, 52, 8, INK)
-    c.hline(42, 42, 52, INK_HI)
-    for i in range(12):
-        x = 44 + i * 4
+    c.fill(14, 16, 16, 22, INK)
+    c.fill(15, 17, 14, 20, INK_MID)
+    c.ellipse(22, 28, 4, 4, INK)
+    c.ellipse(22, 28, 2, 2, CREAM_LO)
+    c.fill(18, 19, 8, 2, RED if playing else INK_HI)
+    # keys
+    c.fill(34, 32, 40, 7, INK)
+    c.hline(34, 32, 40, INK_HI)
+    for i in range(9):
+        x = 36 + i * 4
         key = CREAM_HI if not (playing and i % 3 == 1) else CREAM_LO
-        c.fill(x, 44, 3, 5, key)
-        if i in (1, 3, 6, 8, 10):
-            c.fill(x + 1, 44, 2, 3, INK)
-    # headphones on hook
-    c.fill(103, 18, 2, 8, BRASS)
-    c.fill(101, 16, 6, 3, BRASS_HI)
-    for i, y in enumerate(range(20, 30)):
-        c.put(96 + i // 3, y, INK_HI)
-        c.put(111 - i // 3, y, INK_HI)
-    c.fill(94, 28, 7, 11, INK)
-    c.fill(107, 28, 7, 11, INK)
-    c.fill(95, 29, 5, 9, INK_MID)
-    c.fill(108, 29, 5, 9, INK_MID)
-    c.hline(101, 28, 6, INK_HI)
-    c.hline(95, 37, 5, CREAM_LO)
-    c.hline(108, 37, 5, CREAM_LO)
-    # mic
-    c.vline(132, 30, 24, METAL_HI)
-    c.fill(128, 22, 9, 10, INK_MID)
-    c.fill(129, 23, 7, 8, METAL)
-    c.hline(129, 23, 7, METAL_HI)
-    c.fill(130, 54, 6, 4, WOOD_DK)
-    # playing EQ
+        c.fill(x, 34, 3, 4, key)
+        if i in (1, 3, 6, 8):
+            c.fill(x + 1, 34, 2, 2, INK)
+    # headphones resting on the desk
+    c.fill(80, 20, 6, 10, INK)
+    c.fill(94, 20, 6, 10, INK)
+    c.fill(81, 21, 4, 8, INK_MID)
+    c.fill(95, 21, 4, 8, INK_MID)
+    for i, y in enumerate(range(14, 22)):
+        c.put(84 + i // 2, y, INK_HI)
+        c.put(95 - i // 2, y, INK_HI)
+    c.hline(86, 20, 8, INK_HI)
     if playing:
-        for i, h in enumerate((7, 12, 5, 10, 8)):
-            c.fill(48 + i * 5, 36 - h, 3, h, CODE_A if i % 2 == 0 else CODE_B)
-    else:
-        c.fill(50, 38, 18, 2, INK_HI)
+        for i, h in enumerate((5, 9, 4, 8)):
+            c.fill(38 + i * 5, 28 - h, 3, h, CODE_A if i % 2 == 0 else CODE_B)
     return c.image()
 
 
 def goal() -> Image.Image:
-    c = C(102, 128)
-    c.shadow(51, 125, 44, 2)
-    # posts + bar, 4px with highlight
-    def post(x: int, y0: int, h: int) -> None:
-        c.fill(x, y0, 4, h, GOAL)
-        c.vline(x, y0, h, GOAL_HI)
-        c.vline(x + 3, y0, h, GOAL_LO)
-        c.vline(x + 1, y0, h, GOAL_HI)
+    """Lower, narrower goal — about mascot height."""
+    c = C(56, 88)
+    c.shadow(28, 85, 22, 2)
 
-    post(4, 6, 120)
-    post(94, 6, 120)
-    c.fill(4, 4, 94, 4, GOAL)
-    c.hline(4, 4, 94, GOAL_HI)
-    c.hline(4, 7, 94, GOAL_LO)
-    # receding inner frame
-    c.vline(14, 10, 112, GOAL_LO)
-    c.vline(87, 10, 112, GOAL_LO)
-    c.hline(14, 10, 74, GOAL_LO)
-    # sparse net
-    for x in range(12, 90, 12):
-        for y in range(12, 122):
+    def post(x: int, y0: int, h: int) -> None:
+        c.fill(x, y0, 3, h, GOAL)
+        c.vline(x, y0, h, GOAL_HI)
+        c.vline(x + 2, y0, h, GOAL_LO)
+
+    post(3, 6, 80)
+    post(50, 6, 80)
+    c.fill(3, 4, 50, 3, GOAL)
+    c.hline(3, 4, 50, GOAL_HI)
+    c.hline(3, 6, 50, GOAL_LO)
+    c.vline(8, 9, 74, GOAL_LO)
+    c.vline(47, 9, 74, GOAL_LO)
+    c.hline(8, 9, 40, GOAL_LO)
+    for x in range(10, 48, 10):
+        for y in range(11, 84):
             if c.a[y, x, 3] == 0:
-                c.put(x, y, (*NET[:3], 95))
-    for y in range(16, 122, 12):
-        for x in range(10, 92):
+                c.put(x, y, (*NET[:3], 90))
+    for y in range(14, 84, 10):
+        for x in range(8, 49):
             if c.a[y, x, 3] == 0:
-                c.put(x, y, (*NET_DK[:3], 80))
-    # ground bar
-    c.fill(3, 122, 96, 3, GOAL_DK)
+                c.put(x, y, (*NET_DK[:3], 75))
+    c.fill(2, 84, 52, 2, GOAL_DK)
     return c.image()
 
 

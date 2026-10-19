@@ -3,25 +3,25 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@/lib/play-tone";
 
 const SIGNATURE = "built by fabrice";
-const BALL_R = 12;
-const MASCOT_W = 36;
-const MASCOT_H = 100;
-const SPRITE_W = 64;
-const SPRITE_H = 100;
+const BALL_R = 10;
+const MASCOT_W = 30;
+const MASCOT_H = 82;
+const SPRITE_W = 52;
+const SPRITE_H = 82;
 const SPRITE_COLS = 12;
-const MARK_W = 13;
-const MARK_H = 9;
-const GROUND = 26;
-const GOAL_W = 102;
-const GOAL_H = 128;
-const DESK_W = 156;
-const DESK_H = 84;
-const STUDIO_W = 154;
-const STUDIO_H = 90;
-const LAMP_W = 26;
-const LAMP_H = 96;
-const SCENE_H = 200;
-const BASE_W = 660;
+const MARK_W = 11;
+const MARK_H = 7;
+const ARC_BASE = 14;
+const GOAL_W = 56;
+const GOAL_H = 88;
+const DESK_W = 128;
+const DESK_H = 69;
+const STUDIO_W = 108;
+const STUDIO_H = 72;
+const LAMP_W = 24;
+const LAMP_H = 84;
+const LAMP_HIT_W = 44;
+const SCENE_H = 196;
 const PAD = 10;
 const LETTER_W = 7.1;
 const CRUISE = 1.35;
@@ -35,18 +35,18 @@ const PROP_GOAL = "/mascot/prop-goal.png";
 const PROP_BALL = "/mascot/prop-ball.png";
 /** Bib-center per sheet column so the cream 28 can be drawn un-mirrored. */
 const BIB = [
-  { x: 35, y: 38 },
-  { x: 35, y: 39 },
-  { x: 35, y: 39 },
-  { x: 35, y: 38 },
-  { x: 39, y: 40 },
-  { x: 40, y: 40 },
-  { x: 40, y: 40 },
-  { x: 35, y: 38 },
-  { x: 35, y: 38 },
-  { x: 39, y: 39 },
-  { x: 31, y: 38 },
-  { x: 35, y: 42 },
+  { x: 28, y: 31 },
+  { x: 28, y: 32 },
+  { x: 28, y: 32 },
+  { x: 28, y: 31 },
+  { x: 32, y: 32 },
+  { x: 33, y: 32 },
+  { x: 33, y: 32 },
+  { x: 28, y: 31 },
+  { x: 28, y: 31 },
+  { x: 32, y: 32 },
+  { x: 25, y: 31 },
+  { x: 28, y: 34 },
 ] as const;
 
 let goalLock = false;
@@ -130,8 +130,34 @@ function bounce(s: Scene, v: number) {
 let colLeftX = PAD;
 let sceneScale = 1;
 
-function clientScale(clientW: number) {
-  return clientW < 640 ? Math.min(1, clientW / BASE_W) : 1;
+function compactScene(w: number) {
+  return w < 520;
+}
+
+function showStudio(w: number) {
+  return !compactScene(w);
+}
+
+function arcPeak(w: number) {
+  return compactScene(w) ? 18 : 34;
+}
+
+function groundAt(x: number, w: number) {
+  const mid = w * 0.5;
+  const half = Math.max(w * 0.5, 1);
+  const t = clamp((x - mid) / half, -1, 1);
+  return ARC_BASE + arcPeak(w) * (1 - t * t);
+}
+
+function groundSlope(x: number, w: number) {
+  const mid = w * 0.5;
+  const half = Math.max(w * 0.5, 1);
+  const t = clamp((x - mid) / half, -1, 1);
+  return (-2 * arcPeak(w) * t) / half;
+}
+
+function footY(x: number, w: number) {
+  return Math.round(groundAt(x, w));
 }
 
 function lampX() {
@@ -143,26 +169,23 @@ function deskX() {
 }
 
 function sitDeskX() {
-  return deskX() + 114;
-}
-
-function studioGap(w: number) {
-  if (sceneScale < 1) return 64;
-  return w >= 700 ? 96 : 80;
+  return deskX() + DESK_W + 4;
 }
 
 function studioX(w: number) {
-  return Math.max(deskX() + DESK_W + GOAL_W + studioGap(w) + 8, w - STUDIO_W - 4);
+  return Math.max(deskX() + DESK_W + GOAL_W + 72, w - STUDIO_W - PAD);
 }
 
 function sitStudioX(w: number) {
-  return studioX(w) + 72;
+  return studioX(w) + STUDIO_W + 2;
 }
 
 function goalX(w: number) {
-  const min = deskX() + DESK_W + 20;
-  const max = studioX(w) - GOAL_W - studioGap(w);
-  return max >= min ? max : min;
+  if (compactScene(w)) return Math.max(deskX() + DESK_W + 36, w - GOAL_W - PAD);
+  const crest = w * 0.5 + 38;
+  const min = deskX() + DESK_W + 48;
+  const max = showStudio(w) ? studioX(w) - GOAL_W - 40 : w - GOAL_W - PAD;
+  return clamp(crest, min, max);
 }
 
 function sceneLeft() {
@@ -170,31 +193,34 @@ function sceneLeft() {
 }
 
 function sceneRight(w: number) {
-  return studioX(w) + STUDIO_W;
+  return showStudio(w) ? studioX(w) + STUDIO_W : Math.max(goalX(w) + GOAL_W, w - PAD);
 }
 
 function readLayout(playground: HTMLElement | null) {
   if (!playground || typeof document === "undefined") return;
   const pg = playground.getBoundingClientRect();
   const footer = document.querySelector("footer");
-  if (footer && sceneScale >= 1) {
+  if (footer && !compactScene(playground.clientWidth || 0)) {
     const f = footer.getBoundingClientRect();
-    colLeftX = clamp(f.left - pg.left, 0, Math.max(0, playground.clientWidth - 280));
+    colLeftX = clamp(f.left - pg.left, 0, Math.max(0, playground.clientWidth - 220));
   } else {
     colLeftX = PAD;
   }
 }
 
 function ballResetX(w: number) {
-  return clamp(goalX(w) - 120, pitchLeft() + 28, goalX(w) - 48);
+  const afterLetters = lettersInScene(w)
+    ? letterStart(w) + SIGNATURE.length * LETTER_W + 18
+    : pitchLeft() + 20;
+  return clamp(afterLetters + 8, pitchLeft() + 16, goalX(w) - 22);
 }
 
 function pitchLeft() {
-  return deskX() + DESK_W + 6;
+  return sitDeskX() + MASCOT_W + 12;
 }
 
 function pitchRight(w: number) {
-  return goalX(w) - MASCOT_W - 4;
+  return goalX(w) - MASCOT_W - 6;
 }
 
 function netBack(w: number) {
@@ -206,15 +232,14 @@ function ballMaxX(w: number) {
 }
 
 function lettersInScene(w: number) {
-  if (sceneScale < 1) return false;
-  const span = goalX(w) - (deskX() + DESK_W) - 16;
-  return w >= 640 && span > 80;
+  const span = goalX(w) - (deskX() + DESK_W) - 32;
+  return !compactScene(w) && span > 120;
 }
 
 function letterStart(w: number) {
   const total = SIGNATURE.length * LETTER_W;
-  const leftBound = deskX() + DESK_W + 14;
-  const rightBound = goalX(w) - 14;
+  const leftBound = sitDeskX() + MASCOT_W + 16;
+  const rightBound = goalX(w) - 36;
   return leftBound + Math.max(0, (rightBound - leftBound - total) / 2);
 }
 
@@ -272,6 +297,7 @@ function rightPassedLetters(s: Scene, muted: boolean) {
 }
 
 function sendTo(s: Scene, x: number, next: Activity) {
+  if (next === "studio" && !showStudio(s.w)) next = "idle";
   s.targetX = clamp(x, sceneLeft(), sceneRight(s.w) - MASCOT_W);
   s.pending = next;
   s.activity = "walk";
@@ -315,8 +341,8 @@ function dropZone(s: Scene): Activity {
   const mx = s.mascotX + MASCOT_W / 2;
   const deskL = deskX();
   const studL = studioX(s.w);
-  if (mx >= deskL - 10 && mx <= deskL + DESK_W + 10) return "desk";
-  if (mx >= studL - 10 && mx <= studL + STUDIO_W + 10) return "studio";
+  if (mx >= deskL - 10 && mx <= sitDeskX() + MASCOT_W + 8) return "desk";
+  if (showStudio(s.w) && mx >= studL - 10 && mx <= studL + STUDIO_W + 16) return "studio";
   if (mx > pitchLeft() - 16 && mx < pitchRight(s.w) + 28) return "soccer";
   if (Math.abs(mx - s.ballX) < 40) return "soccer";
   return "idle";
@@ -327,13 +353,17 @@ function nearBall(s: Scene, extra = 0) {
   return Math.abs(s.ballX - mx) < 24 + extra;
 }
 
+function mascotGround(s: Scene) {
+  return groundAt(s.mascotX + MASCOT_W / 2, s.w);
+}
+
 function atHead(s: Scene) {
-  const head = GROUND + MASCOT_H - 4;
+  const head = mascotGround(s) + MASCOT_H - 4;
   return s.ballY > head - 16 && s.ballY < head + 14;
 }
 
 function atFoot(s: Scene) {
-  return s.ballY <= GROUND + BALL_R + 10;
+  return s.ballY <= groundAt(s.ballX, s.w) + BALL_R + 10;
 }
 
 function playContact(s: Scene, muted: boolean, towardGoal = true) {
@@ -407,6 +437,12 @@ function settle(s: Scene, next: Activity, muted: boolean) {
     stopStudioBeat();
     playTone(muted, 1400, 0.03, "square", 0.025);
   } else if (next === "studio") {
+    if (!showStudio(s.w)) {
+      s.activity = "idle";
+      s.pending = "idle";
+      stopStudioBeat();
+      return;
+    }
     s.mascotX = sitStudioX(s.w);
     s.facing = 1;
     s.playing = 80;
@@ -630,6 +666,100 @@ function PixelProp({
   );
 }
 
+function ArcGround({ w, h }: { w: number; h: number }) {
+  const pts: string[] = [];
+  for (let x = 0; x <= w; x += 2) {
+    pts.push(`${x},${h - footY(x, w)}`);
+  }
+  const line = `M ${pts.join(" L ")}`;
+  const fill = `${line} L ${w},${h} L 0,${h} Z`;
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 text-ink"
+      width={w}
+      height={h}
+      shapeRendering="crispEdges"
+    >
+      <path d={fill} fill="currentColor" fillOpacity={0.045} />
+      <path d={line} fill="none" stroke="currentColor" strokeOpacity={0.12} strokeWidth={5} />
+      <path d={line} fill="none" stroke="currentColor" strokeOpacity={0.32} strokeWidth={2} />
+    </svg>
+  );
+}
+
+function ContactShadow({ x, y, rx }: { x: number; y: number; rx: number }) {
+  return (
+    <div
+      aria-hidden
+      className="bg-ink/20 pointer-events-none absolute rounded-full"
+      style={{
+        left: x - rx,
+        bottom: y - 2,
+        width: rx * 2,
+        height: 5,
+      }}
+    />
+  );
+}
+
+function ArcLetters({
+  letters,
+  w,
+  onActivate,
+  onHover,
+}: {
+  letters: Letter[];
+  w: number;
+  onActivate: () => void;
+  onHover?: () => void;
+}) {
+  const start = letterStart(w);
+  const total = SIGNATURE.length * LETTER_W;
+  const minY = footY(start, w);
+  const maxY = footY(start + total / 2, w);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="built by fabrice. Activate to straighten the letters."
+        className="absolute z-[5] cursor-pointer"
+        style={{
+          left: start,
+          width: total,
+          bottom: minY - 2,
+          height: 22 + Math.max(0, maxY - minY),
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onActivate();
+        }}
+        onPointerEnter={() => onHover?.()}
+      />
+      {letters.map((l, i) => {
+        const x = start + i * LETTER_W;
+        return (
+          <span
+            key={`${l.ch}-${i}`}
+            aria-hidden
+            className="text-muted-ink pointer-events-none absolute z-[5] font-mono text-[11px]"
+            style={{
+              left: x,
+              bottom: footY(x + LETTER_W / 2, w),
+              width: LETTER_W,
+              transformOrigin: "center bottom",
+              transform: `rotate(${l.rot}deg)`,
+              transition: "transform 280ms cubic-bezier(0.2, 0.9, 0.32, 1)",
+            }}
+          >
+            {l.ch === " " ? "\u00A0" : l.ch}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function HintChip({ text, x, y, show }: { text: string; x: number; y: number; show: boolean }) {
   return (
     <div
@@ -704,7 +834,7 @@ function initialScene(light: boolean): Scene {
     w: 720,
     scale: 1,
     ballX: 320,
-    ballY: GROUND + BALL_R,
+    ballY: ARC_BASE + BALL_R,
     ballVx: 0,
     ballVy: 0,
     mascotX: sitDeskX(),
@@ -797,22 +927,33 @@ export function SoccerPlayground({
 
     const measure = () => {
       const clientW = el.clientWidth || 720;
-      sceneScale = clientScale(clientW);
-      const w = sceneScale < 1 ? BASE_W : clientW;
+      sceneScale = 1;
+      const w = clientW;
       readLayout(el);
       const s = scene.current;
       if (s) {
         s.w = w;
         s.scale = sceneScale;
+        if (s.activity === "studio" && !showStudio(w)) {
+          s.activity = "idle";
+          s.pending = "idle";
+          s.playing = 0;
+          stopStudioBeat();
+        }
         if (drag.current == null && s.targetX == null) {
           if (s.activity === "desk") s.mascotX = sitDeskX();
           else if (s.activity === "studio") s.mascotX = sitStudioX(w);
+        }
+        if (drag.current !== "ball") {
+          const floor = groundAt(s.ballX, w) + BALL_R;
+          if (s.ballY < floor) s.ballY = floor;
         }
       } else {
         const next = initialScene(light);
         next.w = w;
         next.scale = sceneScale;
         next.ballX = ballResetX(w);
+        next.ballY = groundAt(next.ballX, w) + BALL_R;
         next.mascotX = sitDeskX();
         if (reducedMotion) next.letters = stillLetters();
         scene.current = next;
@@ -925,7 +1066,8 @@ export function SoccerPlayground({
       s.ballVx = ((x - (last.current.x - rect.left) / sc) / dt) * 16;
       s.ballVy = ((y - prevY) / dt) * 16;
       s.ballX = clamp(x, sceneLeft() + BALL_R, ballMaxX(s.w));
-      s.ballY = clamp(y, GROUND + BALL_R, GROUND + GOAL_H + 20);
+      const floor = groundAt(s.ballX, s.w) + BALL_R;
+      s.ballY = clamp(y, floor, floor + GOAL_H + 20);
     } else {
       const prevX = s.mascotX;
       s.mascotX = clamp(x - MASCOT_W / 2, sceneLeft(), sceneRight(s.w) - MASCOT_W);
@@ -995,6 +1137,17 @@ export function SoccerPlayground({
   const sx = studioX(s.w);
   const sit = s.activity === "desk" || s.activity === "studio";
   const inSceneLetters = lettersInScene(s.w);
+  const studioVisible = showStudio(s.w);
+  const lampCX = lampX() + LAMP_W / 2;
+  const deskCX = dx + DESK_W / 2;
+  const goalCX = gx + GOAL_W / 2;
+  const studioCX = sx + STUDIO_W / 2;
+  const mascotCX = s.mascotX + MASCOT_W / 2;
+  const lampY = footY(lampCX, s.w);
+  const deskY = footY(deskCX, s.w);
+  const goalY = footY(goalCX, s.w);
+  const studioY = footY(studioCX, s.w);
+  const mascotY = footY(mascotCX, s.w);
   const place =
     s.activity === "desk"
       ? "he's at the desk."
@@ -1030,25 +1183,23 @@ export function SoccerPlayground({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
           >
-            <div
-              aria-hidden
-              className="pointer-events-none absolute"
-              style={{
-                left: sceneLeft() - 6,
-                width: Math.max(140, sceneRight(s.w) - sceneLeft() + 12),
-                bottom: GROUND - 4,
-                height: 6,
-              }}
-            >
-              <div className="bg-ink/25 h-px w-full" />
-              <div className="bg-ink/12 h-px w-full" />
-              <div className="bg-ink/[0.07] h-[3px] w-full" />
-            </div>
+            <ArcGround w={s.w} h={SCENE_H} />
+            <ContactShadow x={lampCX} y={lampY} rx={10} />
+            <ContactShadow x={deskCX} y={deskY} rx={28} />
+            <ContactShadow x={goalCX} y={goalY} rx={16} />
+            {studioVisible && <ContactShadow x={studioCX} y={studioY} rx={22} />}
+            <ContactShadow x={mascotCX} y={mascotY} rx={12} />
+            <ContactShadow x={s.ballX} y={footY(s.ballX, s.w)} rx={7} />
 
             <button
               type="button"
-              className="absolute cursor-crosshair"
-              style={{ left: lampX(), bottom: GROUND, width: LAMP_W, height: LAMP_H }}
+              className="absolute z-[6] cursor-crosshair"
+              style={{
+                left: lampX() - (LAMP_HIT_W - LAMP_W) / 2,
+                bottom: lampY,
+                width: LAMP_HIT_W,
+                height: LAMP_H,
+              }}
               aria-label={light ? "Turn lamp on, dark mode" : "Turn lamp off, light mode"}
               onClick={() => {
                 if (!scene.current) return;
@@ -1067,25 +1218,28 @@ export function SoccerPlayground({
                 if (scene.current) scene.current.hint = null;
               }}
             >
-              <PixelProp
-                src={PROP_LAMP}
-                width={LAMP_W}
-                height={LAMP_H}
-                frames={2}
-                frame={s.lampOn ? 1 : 0}
-              />
+              <div className="flex h-full items-end justify-center">
+                <PixelProp
+                  src={PROP_LAMP}
+                  width={LAMP_W}
+                  height={LAMP_H}
+                  frames={2}
+                  frame={s.lampOn ? 1 : 0}
+                />
+              </div>
             </button>
             {s.lampOn && (
               <div
                 aria-hidden
-                className="pointer-events-none absolute rounded-full"
+                className="pointer-events-none absolute z-[5]"
                 style={{
-                  left: lampX() - 14,
-                  bottom: GROUND + LAMP_H - 36,
-                  width: 54,
-                  height: 54,
+                  left: lampX() - 16,
+                  bottom: lampY + 18,
+                  width: 56,
+                  height: 64,
                   background:
-                    "radial-gradient(circle, oklch(0.85 0.12 85 / 0.34), transparent 70%)",
+                    "radial-gradient(ellipse at 50% 18%, oklch(0.86 0.14 85 / 0.42), oklch(0.82 0.1 80 / 0.12) 48%, transparent 72%)",
+                  clipPath: "polygon(36% 8%, 64% 8%, 92% 100%, 8% 100%)",
                 }}
               />
             )}
@@ -1093,7 +1247,7 @@ export function SoccerPlayground({
             <button
               type="button"
               className="absolute cursor-crosshair"
-              style={{ left: dx, bottom: GROUND, width: DESK_W, height: DESK_H }}
+              style={{ left: dx, bottom: deskY, width: DESK_W, height: DESK_H }}
               aria-label="Coding desk"
               onClick={() => {
                 if (!scene.current) return;
@@ -1118,13 +1272,11 @@ export function SoccerPlayground({
 
             <span className="sr-only">{SIGNATURE}</span>
             {inSceneLetters && (
-              <SignatureRow
+              <ArcLetters
                 letters={s.letters}
+                w={s.w}
                 onActivate={replayLetters}
                 onHover={hoverLetters}
-                letterWidth={LETTER_W}
-                className="text-muted-ink absolute z-[5] cursor-pointer font-mono text-[11px] whitespace-pre"
-                style={{ left: letterStart(s.w), bottom: GROUND }}
               />
             )}
 
@@ -1132,7 +1284,7 @@ export function SoccerPlayground({
               className="text-ink absolute z-10 flex touch-none items-end justify-center"
               style={{
                 left: s.mascotX - (SPRITE_W - MASCOT_W) / 2,
-                bottom: GROUND + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
+                bottom: mascotY + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
                 width: SPRITE_W,
                 height: MASCOT_H + 10,
                 cursor: s.lift > 0 ? "grabbing" : "grab",
@@ -1151,10 +1303,6 @@ export function SoccerPlayground({
                   className="border-ink/50 pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed"
                 />
               )}
-              <span
-                aria-hidden
-                className="bg-ink/20 pointer-events-none absolute bottom-1 left-1/2 h-1.5 w-8 -translate-x-1/2 rounded-full"
-              />
               <PixelMascot
                 kicking={s.kicking}
                 heading={s.heading}
@@ -1208,7 +1356,7 @@ export function SoccerPlayground({
             <button
               type="button"
               className="text-ink absolute z-0 cursor-crosshair"
-              style={{ left: gx, bottom: GROUND, width: GOAL_W, height: GOAL_H }}
+              style={{ left: gx, bottom: goalY, width: GOAL_W, height: GOAL_H }}
               aria-label="Walk to the goal"
               onClick={() => {
                 const sc = scene.current;
@@ -1242,67 +1390,69 @@ export function SoccerPlayground({
               )}
             </button>
 
-            <button
-              type="button"
-              className="text-ink absolute cursor-crosshair"
-              style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: STUDIO_H }}
-              aria-label="Music studio"
-              onClick={() => {
-                if (!scene.current) return;
-                sendTo(scene.current, sitStudioX(scene.current.w), "studio");
-              }}
-              onPointerEnter={() => {
-                if (scene.current) scene.current.hint = "studio";
-              }}
-              onPointerLeave={() => {
-                if (scene.current) scene.current.hint = null;
-              }}
-            >
-              <PixelProp
-                src={PROP_STUDIO}
-                width={STUDIO_W}
-                height={STUDIO_H}
-                frames={2}
-                frame={s.activity === "studio" || s.playing > 0 ? 1 : 0}
-              />
-            </button>
+            {studioVisible && (
+              <button
+                type="button"
+                className="text-ink absolute cursor-crosshair"
+                style={{ left: sx, bottom: studioY, width: STUDIO_W, height: STUDIO_H }}
+                aria-label="Music studio"
+                onClick={() => {
+                  if (!scene.current) return;
+                  sendTo(scene.current, sitStudioX(scene.current.w), "studio");
+                }}
+                onPointerEnter={() => {
+                  if (scene.current) scene.current.hint = "studio";
+                }}
+                onPointerLeave={() => {
+                  if (scene.current) scene.current.hint = null;
+                }}
+              >
+                <PixelProp
+                  src={PROP_STUDIO}
+                  width={STUDIO_W}
+                  height={STUDIO_H}
+                  frames={2}
+                  frame={s.activity === "studio" || s.playing > 0 ? 1 : 0}
+                />
+              </button>
+            )}
 
             {ready && (
               <>
                 <HintChip
                   text="grab."
-                  x={s.mascotX + MASCOT_W / 2}
-                  y={GROUND + MASCOT_H + 10}
+                  x={mascotCX}
+                  y={mascotY + MASCOT_H + 10}
                   show={s.hoverMascot && s.lift === 0 && !s.speech}
                 />
                 <HintChip
                   text="light."
-                  x={lampX() + LAMP_W / 2}
-                  y={GROUND + LAMP_H + 8}
+                  x={lampCX}
+                  y={lampY + LAMP_H + 8}
                   show={s.hint === "lamp"}
                 />
                 <HintChip
                   text="the work."
-                  x={dx + DESK_W / 2}
-                  y={GROUND + DESK_H + 8}
+                  x={deskCX}
+                  y={deskY + DESK_H + 8}
                   show={s.hint === "desk" && s.lift === 0}
                 />
                 <HintChip
                   text="drop to code."
-                  x={dx + DESK_W / 2}
-                  y={GROUND + DESK_H + 8}
+                  x={deskCX}
+                  y={deskY + DESK_H + 8}
                   show={s.hint === "desk" && s.lift > 0}
                 />
                 <HintChip
                   text="the pitch."
-                  x={gx + GOAL_W / 2}
-                  y={GROUND + GOAL_H + 8}
+                  x={goalCX}
+                  y={goalY + GOAL_H + 8}
                   show={s.hint === "soccer" && s.lift === 0}
                 />
                 <HintChip
                   text="drop to play."
-                  x={gx + GOAL_W / 2}
-                  y={GROUND + GOAL_H + 8}
+                  x={goalCX}
+                  y={goalY + GOAL_H + 8}
                   show={s.hint === "soccer" && s.lift > 0}
                 />
                 <HintChip
@@ -1311,18 +1461,22 @@ export function SoccerPlayground({
                   y={s.ballY + 14}
                   show={s.hint === "ball"}
                 />
-                <HintChip
-                  text="after hours."
-                  x={sx + STUDIO_W / 2}
-                  y={GROUND + STUDIO_H + 8}
-                  show={s.hint === "studio" && s.lift === 0}
-                />
-                <HintChip
-                  text="drop to make music."
-                  x={sx + STUDIO_W / 2}
-                  y={GROUND + STUDIO_H + 8}
-                  show={s.hint === "studio" && s.lift > 0}
-                />
+                {studioVisible && (
+                  <>
+                    <HintChip
+                      text="after hours."
+                      x={studioCX}
+                      y={studioY + STUDIO_H + 8}
+                      show={s.hint === "studio" && s.lift === 0}
+                    />
+                    <HintChip
+                      text="drop to make music."
+                      x={studioCX}
+                      y={studioY + STUDIO_H + 8}
+                      show={s.hint === "studio" && s.lift > 0}
+                    />
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1357,7 +1511,6 @@ function pickLine(kind: "mascot" | "goal") {
 
 function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, reduced = false) {
   const gx = goalX(s.w);
-  const groundY = GROUND + BALL_R;
   const sitting = s.activity === "desk" || s.activity === "studio";
   const fixing = s.activity === "fix" || s.pending === "fix";
 
@@ -1436,7 +1589,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     const left = pitchLeft();
     const right = pitchRight(s.w);
     const behind = Math.sign(gx - s.ballX) || 1;
-    const high = s.ballY > GROUND + 36;
+    const high = s.ballY > groundAt(s.ballX, s.w) + 36;
     const want = clamp(s.ballX - MASCOT_W / 2 - (high ? 0 : 10) * behind, left, right);
     if (Math.abs(want - s.mascotX) > 1.1) moveToward(s, want, 1.55);
     else s.walkVel *= 0.8;
@@ -1471,10 +1624,12 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     s.ballY += s.ballVy;
     s.ballVx *= 0.992;
 
-    if (s.ballY <= groundY) {
-      s.ballY = groundY;
+    const floor = groundAt(s.ballX, s.w) + BALL_R;
+    if (s.ballY <= floor) {
+      s.ballY = floor;
       if (s.ballVy < 0) s.ballVy *= -0.58;
       s.ballVx *= 0.94;
+      s.ballVx += -groundSlope(s.ballX, s.w) * 0.55;
       if (Math.abs(s.ballVy) < 0.35) s.ballVy = 0;
     }
     const minX = sceneLeft() + BALL_R;
@@ -1487,8 +1642,9 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       s.ballX = maxX;
       if (s.ballVx > 0) s.ballVx *= -0.4;
     }
-    if (s.ballY > GROUND + GOAL_H + 20) {
-      s.ballY = GROUND + GOAL_H + 20;
+    const ceiling = groundAt(s.ballX, s.w) + GOAL_H + 20;
+    if (s.ballY > ceiling) {
+      s.ballY = ceiling;
       s.ballVy *= -0.4;
     }
   }
@@ -1502,10 +1658,11 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       const lx = start + i * LETTER_W;
       const hitBall =
         lettersInScene(s.w) &&
-        Math.abs(s.ballX - lx) < 8 &&
-        s.ballY < GROUND + BALL_R + 8 &&
-        Math.abs(s.ballVx) > 0.7;
-      const hitMascot = lettersInScene(s.w) && Math.abs(mx - lx) < 9 && Math.abs(s.walkVel) > 0.45;
+        Math.abs(s.ballX - lx) < 7 &&
+        s.ballY < groundAt(lx, s.w) + BALL_R + 8 &&
+        Math.abs(s.ballVx) > 0.9;
+      const hitMascot =
+        lettersInScene(s.w) && !sitting && Math.abs(mx - lx) < 8 && Math.abs(s.walkVel) > 0.55;
       if (hitBall || hitMascot) {
         const dir = (hitBall ? s.ballX < lx : mx < lx) ? 1 : -1;
         return { ...l, rot: dir * (76 + Math.min(18, Math.abs(s.ballVx) * 4)) };
@@ -1514,11 +1671,12 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     });
   }
 
+  const goalFloor = groundAt(gx + GOAL_W / 2, s.w);
   const inGoal =
     s.ballX > gx + 6 &&
     s.ballX <= ballMaxX(s.w) + 0.5 &&
-    s.ballY > GROUND + BALL_R - 1 &&
-    s.ballY < GROUND + GOAL_H - 4;
+    s.ballY > goalFloor + BALL_R - 1 &&
+    s.ballY < goalFloor + GOAL_H - 4;
 
   if (inGoal && !goalLock) {
     goalLock = true;
@@ -1529,7 +1687,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     playTone(muted, 780, 0.1, "square", 0.04);
     window.setTimeout(() => {
       s.ballX = ballResetX(s.w);
-      s.ballY = GROUND + BALL_R;
+      s.ballY = groundAt(s.ballX, s.w) + BALL_R;
       s.ballVx = 0;
       s.ballVy = 0;
       s.lastTouch = null;
