@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
-import { CONTENT_MAX_PX } from "@/lib/career-os";
 import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@/lib/play-tone";
 
 const SIGNATURE = "built by fabrice";
@@ -14,12 +13,16 @@ const DESK_W = 78;
 const STUDIO_W = 68;
 const LAMP_W = 18;
 const PAD = 14;
+const LETTER_W = 7.1;
+const CRUISE = 1.18;
+const ACCEL = 0.055;
 
 let goalLock = false;
 
 type Letter = { ch: string; rot: number };
 type Hint = "ball" | "desk" | "lamp" | "studio" | "mascot" | "soccer" | null;
-type Activity = "idle" | "walk" | "desk" | "studio" | "soccer";
+type Activity = "idle" | "walk" | "desk" | "studio" | "soccer" | "fix";
+type FixPass = "approach" | "sweep";
 
 type Scene = {
   w: number;
@@ -30,6 +33,11 @@ type Scene = {
   mascotX: number;
   facing: 1 | -1;
   walk: number;
+  walkVel: number;
+  walkPhase: number;
+  idlePhase: number;
+  turnT: number;
+  bob: number;
   score: number;
   letters: Letter[];
   hint: Hint;
@@ -51,9 +59,24 @@ type Scene = {
   lifeT: number;
   lift: number;
   hoverMascot: boolean;
+  fixIndex: number;
+  fixHold: number;
+  fixPlayed: boolean;
+  lastFixIndex: number;
+  fixPass: FixPass;
+  letterGuard: number;
 };
 
-const stillLetters = (): Letter[] => SIGNATURE.split("").map((ch) => ({ ch, rot: 0 }));
+function knockedLetters(): Letter[] {
+  return SIGNATURE.split("").map((ch, i) => ({
+    ch,
+    rot: ch === " " ? 0 : (i % 2 === 0 ? -1 : 1) * (86 + ((i * 11) % 14)),
+  }));
+}
+
+function stillLetters(): Letter[] {
+  return SIGNATURE.split("").map((ch) => ({ ch, rot: 0 }));
+}
 
 function prefersReducedMotion() {
   return (
@@ -66,18 +89,7 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
-let mailAlignX: number | null = null;
 let colLeftX = PAD;
-
-function estimateColLeft() {
-  if (typeof window === "undefined") return PAD;
-  const vw = window.innerWidth;
-  const col = Math.min(CONTENT_MAX_PX, vw);
-  const pgPad = vw >= 640 ? 32 : 16;
-  return Math.max(PAD, (vw - col) / 2 - pgPad);
-}
-
-colLeftX = estimateColLeft();
 
 function lampX() {
   return colLeftX;
@@ -91,21 +103,22 @@ function sitDeskX() {
   return deskX() + 48;
 }
 
-function goalX(w: number) {
-  const min = deskX() + DESK_W + 16;
-  const max = w - STUDIO_W - GOAL_W - 10;
-  if (mailAlignX != null) {
-    return clamp(mailAlignX - GOAL_W / 2, min, max);
-  }
-  return clamp(w * 0.58, min, max);
+function studioGap(w: number) {
+  return w >= 640 ? 84 : 56;
 }
 
 function studioX(w: number) {
-  return clamp(goalX(w) + GOAL_W + 12, deskX() + DESK_W + GOAL_W + 20, w - STUDIO_W - 4);
+  return Math.max(deskX() + DESK_W + GOAL_W + studioGap(w) + 8, w - STUDIO_W - 4);
 }
 
 function sitStudioX(w: number) {
   return studioX(w) + 16;
+}
+
+function goalX(w: number) {
+  const min = deskX() + DESK_W + 20;
+  const max = studioX(w) - GOAL_W - studioGap(w);
+  return max >= min ? max : min;
 }
 
 function sceneLeft() {
@@ -116,7 +129,7 @@ function sceneRight(w: number) {
   return studioX(w) + STUDIO_W;
 }
 
-function readLayout(playground: HTMLElement | null, mailEl?: HTMLElement | null) {
+function readLayout(playground: HTMLElement | null) {
   if (!playground || typeof document === "undefined") return;
   const pg = playground.getBoundingClientRect();
   const footer = document.querySelector("footer");
@@ -124,19 +137,8 @@ function readLayout(playground: HTMLElement | null, mailEl?: HTMLElement | null)
     const f = footer.getBoundingClientRect();
     colLeftX = clamp(f.left - pg.left, 0, Math.max(0, playground.clientWidth - 220));
   } else {
-    colLeftX = estimateColLeft();
+    colLeftX = PAD;
   }
-  const mail = mailEl ?? document.querySelector<HTMLElement>('footer a[aria-label="Email"]');
-  if (mail) {
-    const a = mail.getBoundingClientRect();
-    mailAlignX = a.left + a.width / 2 - pg.left;
-    return;
-  }
-  const vw = window.innerWidth;
-  const col = Math.min(CONTENT_MAX_PX, vw);
-  const pad = vw >= 640 ? 24 : 20;
-  const mailCenter = (vw - col) / 2 + col - pad - 14 - 12 - 7;
-  mailAlignX = mailCenter - pg.left;
 }
 
 function ballResetX(w: number) {
@@ -159,12 +161,102 @@ function ballMaxX(w: number) {
   return netBack(w) - BALL_R;
 }
 
+function lettersInScene(w: number) {
+  const span = goalX(w) - (deskX() + DESK_W) - 24;
+  return w >= 640 && span > SIGNATURE.length * LETTER_W + 8;
+}
+
+function letterStart(w: number) {
+  const total = SIGNATURE.length * LETTER_W;
+  const leftBound = deskX() + DESK_W + 14;
+  const rightBound = goalX(w) - 14;
+  return leftBound + Math.max(0, (rightBound - leftBound - total) / 2);
+}
+
+function letterX(s: Scene, i: number) {
+  if (lettersInScene(s.w)) return letterStart(s.w) + i * LETTER_W;
+  const left = pitchLeft();
+  const right = Math.max(left + 48, pitchRight(s.w));
+  const t = SIGNATURE.length <= 1 ? 0 : i / (SIGNATURE.length - 1);
+  return left + t * (right - left);
+}
+
+function lettersNeedFix(s: Scene) {
+  return s.letters.some((l) => l.ch !== " " && Math.abs(l.rot) > 6);
+}
+
+function nextFixIndex(s: Scene, from: number) {
+  let i = from;
+  while (i < s.letters.length && (s.letters[i]!.ch === " " || Math.abs(s.letters[i]!.rot) <= 6)) {
+    i += 1;
+  }
+  return i;
+}
+
+function letterEndX(s: Scene) {
+  const last = letterX(s, s.letters.length - 1) + 12;
+  const beforeGoal = goalX(s.w) - MASCOT_W - 10;
+  return clamp(Math.min(last, beforeGoal), sceneLeft(), sceneRight(s.w) - MASCOT_W);
+}
+
+function letterStartX(s: Scene) {
+  return clamp(letterX(s, 0) - MASCOT_W * 0.75, sceneLeft(), sceneRight(s.w) - MASCOT_W);
+}
+
+function rightPassedLetters(s: Scene, muted: boolean) {
+  if (s.fixPass !== "sweep") return false;
+  if (s.fixHold > 0) {
+    s.fixHold -= 1;
+    s.walkVel *= 0.55;
+    return true;
+  }
+  const i = nextFixIndex(s, s.lastFixIndex);
+  if (i >= s.letters.length) return false;
+  const hand = s.mascotX + (s.facing === 1 ? MASCOT_W * 0.72 : MASCOT_W * 0.28);
+  const lx = letterX(s, i);
+  const reached = s.facing === 1 ? hand >= lx - 2 : hand <= lx + 2;
+  if (!reached) return false;
+  const cur = s.letters[i]!;
+  s.letters[i] = { ...cur, rot: 0 };
+  s.lastFixIndex = i + 1;
+  s.fixIndex = i + 1;
+  s.fixHold = 8;
+  s.hop = 2.4;
+  playTone(muted, 360 + i * 14, 0.03, "square", 0.018);
+  return true;
+}
+
 function sendTo(s: Scene, x: number, next: Activity) {
   s.targetX = clamp(x, sceneLeft(), sceneRight(s.w) - MASCOT_W);
   s.pending = next;
   s.activity = "walk";
-  s.facing = s.targetX >= s.mascotX ? 1 : -1;
   if (next !== "studio") stopStudioBeat();
+  if (next !== "fix") {
+    s.coding = 0;
+    s.playing = 0;
+  }
+}
+
+function beginFix(s: Scene, replay: boolean, reduced = false) {
+  if (reduced) {
+    s.letters = stillLetters();
+    s.fixPlayed = true;
+    return;
+  }
+  if ((s.activity === "fix" || s.pending === "fix") && !replay) return;
+  if (replay || !lettersNeedFix(s)) s.letters = knockedLetters();
+  s.fixIndex = 0;
+  s.lastFixIndex = 0;
+  s.fixHold = 0;
+  s.fixPass = "approach";
+  s.pending = "fix";
+  s.activity = "walk";
+  s.targetX = letterStartX(s);
+  s.coding = 0;
+  s.playing = 0;
+  s.speech = "one sec.";
+  s.speechT = 90;
+  stopStudioBeat();
 }
 
 function dwellFor(next: Activity) {
@@ -259,6 +351,7 @@ function settle(s: Scene, next: Activity, muted: boolean) {
   s.activity = next;
   s.targetX = null;
   s.pending = next;
+  s.walkVel = 0;
   s.lifeT = dwellFor(next);
   if (next === "desk") {
     s.mascotX = sitDeskX();
@@ -280,9 +373,78 @@ function settle(s: Scene, next: Activity, muted: boolean) {
     s.speech = "let's play.";
     s.speechT = 90;
     if (nearBall(s, 16)) playContact(s, muted, true);
+  } else if (next === "fix") {
+    s.activity = "fix";
   } else {
     stopStudioBeat();
   }
+}
+
+function finishTurn(s: Scene, dir: 1 | -1) {
+  if (s.facing === dir && s.turnT <= 0) return true;
+  if (s.facing !== dir && s.turnT <= 0) s.turnT = 18;
+  s.turnT -= 1;
+  if (s.turnT === 9) s.facing = dir;
+  if (s.turnT <= 0) {
+    s.turnT = 0;
+    s.facing = dir;
+    return true;
+  }
+  return false;
+}
+
+function easeOutCubic(t: number) {
+  const x = clamp(t, 0, 1);
+  return 1 - (1 - x) ** 3;
+}
+
+function moveToward(s: Scene, x: number, cruise = CRUISE) {
+  const dist = x - s.mascotX;
+  const dir: 1 | -1 = dist >= 0 ? 1 : -1;
+  if (!finishTurn(s, dir)) {
+    s.walkVel *= 0.72;
+    s.bob *= 0.86;
+    return false;
+  }
+  if (Math.abs(dist) < 0.7 && Math.abs(s.walkVel) < 0.26) {
+    s.mascotX = x;
+    s.walkVel = 0;
+    s.bob *= 0.72;
+    const rest = Math.round(s.walkPhase);
+    s.walkPhase += (rest - s.walkPhase) * 0.28;
+    return true;
+  }
+  const abs = Math.abs(dist);
+  const slow = abs < 52 ? easeOutCubic(abs / 52) : 1;
+  const cap = Math.max(0.18, cruise * slow);
+  const speedNow = Math.abs(s.walkVel);
+  const easeIn = 0.42 + 0.58 * Math.min(1, speedNow / Math.max(0.2, cruise) + 0.18);
+  s.walkVel += ACCEL * dir * easeIn;
+  s.walkVel = clamp(s.walkVel, -cap, cap);
+  s.mascotX += s.walkVel;
+  const spd = Math.abs(s.walkVel) / Math.max(0.2, cruise);
+  s.walkPhase += 0.034 * Math.max(0.28, spd);
+  const pose = walkPose(s.walkPhase);
+  s.bob = pose.bob * Math.min(1, spd);
+  return false;
+}
+
+type WalkPose = { l: number; r: number; al: number; ar: number; bob: number };
+
+function walkPose(phase: number): WalkPose {
+  const frames: WalkPose[] = [
+    { l: 30, r: -22, al: -26, ar: 24, bob: 0.2 },
+    { l: 22, r: -10, al: -18, ar: 16, bob: 1.7 },
+    { l: 8, r: 4, al: -6, ar: 8, bob: 0.55 },
+    { l: -10, r: 20, al: 14, ar: -12, bob: 0.15 },
+    { l: -22, r: 30, al: 24, ar: -26, bob: 0.2 },
+    { l: -10, r: 22, al: 16, ar: -18, bob: 1.7 },
+    { l: 4, r: 8, al: 8, ar: -6, bob: 0.55 },
+    { l: 20, r: -10, al: -12, ar: 14, bob: 0.15 },
+  ];
+  const n = frames.length;
+  const p = ((phase % 1) + 1) % 1;
+  return frames[Math.floor(p * n) % n]!;
 }
 
 function PixelMascot({
@@ -290,22 +452,76 @@ function PixelMascot({
   heading,
   facing,
   sit,
-  walk,
+  walkPhase,
+  speed,
+  idlePhase,
+  turnT,
+  bob,
+  reduced,
 }: {
   kicking: boolean;
   heading: boolean;
   facing: 1 | -1;
   sit: boolean;
-  walk: number;
+  walkPhase: number;
+  speed: number;
+  idlePhase: number;
+  turnT: number;
+  bob: number;
+  reduced: boolean;
 }) {
-  const step = Math.floor(walk) % 2;
-  const headY = sit ? 5 : heading ? 0 : 1;
-  const bodyY = sit ? 12 : heading ? 7 : 8;
-  const bodyH = sit ? 6 : heading ? 8 : 9;
-  const armY = sit ? 13 : 10;
-  const legY = sit ? 18 : 17;
-  const legL = sit ? 4 : kicking ? 6 : step ? 8 : 9;
-  const legR = sit ? 4 : kicking ? 7 : step ? 9 : 8;
+  const moving = !sit && !reduced && speed > 0.16 && !kicking && !heading;
+  const turning = !reduced && turnT > 0;
+  const pose = walkPose(walkPhase);
+  const breath = reduced ? 0 : Math.sin(idlePhase);
+  const shift = sit || moving || reduced || turning ? 0 : Math.sin(idlePhase * 0.42) * 1.05;
+  const bobY = reduced ? 0 : sit ? breath * 0.35 : moving ? bob : turning ? 0.2 : breath * 0.55;
+  const squash = turning ? 0.78 + 0.22 * (Math.abs(turnT - 9) / 9) : 1;
+
+  const headY = sit ? 5 : heading ? 0 : 1 - bobY * 0.3;
+  const bodyY = sit ? 12 : heading ? 7 : 8 - bobY;
+  const bodyH = sit ? 6 : heading ? 8 : 9 + (reduced ? 0 : breath * 0.25);
+  const hipY = sit ? 18 : 17 - bobY * 0.35;
+  const armY = sit ? 13 : 10 - bobY * 0.45;
+
+  const idleLeg = reduced || sit || moving ? 0 : shift * 6;
+  const legLRot = sit ? 0 : kicking ? -8 : heading ? 8 : turning ? 10 : moving ? pose.l : idleLeg;
+  const legRRot = sit
+    ? 0
+    : kicking
+      ? 38
+      : heading
+        ? -6
+        : turning
+          ? -8
+          : moving
+            ? pose.r
+            : -idleLeg * 0.4;
+  const armLRot = sit
+    ? 18
+    : kicking
+      ? 16
+      : heading
+        ? -28
+        : turning
+          ? 8
+          : moving
+            ? pose.al
+            : 6 + breath * 3;
+  const armRRot = sit
+    ? -8
+    : kicking
+      ? -20
+      : heading
+        ? -22
+        : turning
+          ? -6
+          : moving
+            ? pose.ar
+            : -4 - breath * 3;
+
+  const lean = heading ? -12 : moving ? 5 : turning ? 3 : shift * 2.4;
+
   return (
     <svg
       width={MASCOT_W}
@@ -313,39 +529,47 @@ function PixelMascot({
       viewBox="0 0 16 28"
       aria-hidden
       className="overflow-visible"
-      style={{ transform: `scaleX(${facing}) ${heading ? "rotate(-12deg)" : ""}` }}
+      style={{
+        transform: `scaleX(${facing * squash}) rotate(${lean}deg)`,
+        transformOrigin: "center bottom",
+      }}
     >
-      <rect x="4.5" y={headY - 1.5} width="7" height="3" rx="0.6" fill="currentColor" />
-      <rect x="5" y={headY} width="6" height="6" rx="1" fill="currentColor" />
-      <rect x="6.2" y={headY + 2.2} width="1.3" height="1.3" fill="var(--paper)" />
-      <rect x="9" y={headY + 2.2} width="1.3" height="1.3" fill="var(--paper)" />
-      <rect x="5.4" y={bodyY} width="5.2" height={bodyH} fill="currentColor" />
-      <rect x="3.4" y={armY} width="2.2" height={sit ? 5 : 6} fill="currentColor" />
-      <rect
-        x="10.4"
-        y={sit ? armY + 1 : armY}
-        width="2.2"
-        height={sit ? 4 : 6}
-        fill="currentColor"
-      />
-      {sit ? (
-        <>
-          <rect x="5" y={legY} width="6" height="2.2" fill="currentColor" />
-          <rect x="5" y={legY + 2} width="2.3" height={legL} fill="currentColor" />
-          <rect x="8.7" y={legY + 2} width="2.3" height={legR} fill="currentColor" />
-        </>
-      ) : (
-        <>
-          <rect x="5" y={legY} width="2.4" height={legL} fill="currentColor" />
+      <g transform={`translate(${shift}, ${-bobY})`}>
+        <rect x="4.5" y={headY - 1.5} width="7" height="3" rx="0.6" fill="currentColor" />
+        <rect x="5" y={headY} width="6" height="6" rx="1" fill="currentColor" />
+        <rect x="6.2" y={headY + 2.2} width="1.3" height="1.3" fill="var(--paper)" />
+        <rect x="9" y={headY + 2.2} width="1.3" height="1.3" fill="var(--paper)" />
+        <rect x="5.4" y={bodyY} width="5.2" height={bodyH} fill="currentColor" />
+        <g transform={`rotate(${armLRot} 4.5 ${armY + 1})`}>
+          <rect x="3.3" y={armY} width="2.1" height={sit ? 5 : 6.4} rx="0.4" fill="currentColor" />
+        </g>
+        <g transform={`rotate(${armRRot} 11.5 ${armY + 1})`}>
           <rect
-            x="8.6"
-            y={kicking ? legY + 2 : legY}
-            width="2.4"
-            height={legR}
+            x="10.5"
+            y={sit ? armY + 1 : armY}
+            width="2.1"
+            height={sit ? 4 : 6.4}
+            rx="0.4"
             fill="currentColor"
           />
-        </>
-      )}
+        </g>
+        {sit ? (
+          <>
+            <rect x="5" y={hipY} width="6" height="2.2" fill="currentColor" />
+            <rect x="5" y={hipY + 2} width="2.3" height="4" fill="currentColor" />
+            <rect x="8.7" y={hipY + 2} width="2.3" height="4" fill="currentColor" />
+          </>
+        ) : (
+          <>
+            <g transform={`rotate(${legLRot} 6.2 ${hipY})`}>
+              <rect x="5" y={hipY} width="2.4" height="9.2" rx="0.4" fill="currentColor" />
+            </g>
+            <g transform={`rotate(${legRRot} 9.8 ${hipY})`}>
+              <rect x="8.6" y={hipY} width="2.4" height="9.2" rx="0.4" fill="currentColor" />
+            </g>
+          </>
+        )}
+      </g>
     </svg>
   );
 }
@@ -454,32 +678,60 @@ function HintChip({ text, x, y, show }: { text: string; x: number; y: number; sh
   );
 }
 
-export function SoccerPlayground({
-  muted,
-  light,
-  onTheme,
-  goalAnchor,
-  captionClock,
+function SignatureRow({
+  letters,
+  onActivate,
+  onHover,
+  className,
+  style,
+  letterWidth,
 }: {
-  muted: boolean;
-  light: boolean;
-  onTheme: (light: boolean) => void;
-  goalAnchor?: RefObject<HTMLAnchorElement | null>;
-  captionClock?: string;
+  letters: Letter[];
+  onActivate: () => void;
+  onHover?: () => void;
+  className?: string;
+  style?: CSSProperties;
+  letterWidth?: number;
 }) {
-  const root = useRef<HTMLDivElement>(null);
-  const scene = useRef<Scene | null>(null);
-  const drag = useRef<"ball" | "mascot" | null>(null);
-  const last = useRef({ x: 0, y: 0, t: 0 });
-  const visible = useRef(true);
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label="built by fabrice. Activate to straighten the letters."
+      className={className}
+      style={style}
+      onClick={(e) => {
+        e.stopPropagation();
+        onActivate();
+      }}
+      onPointerEnter={() => onHover?.()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
+    >
+      {letters.map((l, i) => (
+        <span
+          key={`${l.ch}-${i}`}
+          className="inline-block"
+          style={{
+            width: letterWidth,
+            transformOrigin: "center bottom",
+            transform: `rotate(${l.rot}deg)`,
+            transition: "transform 280ms cubic-bezier(0.2, 0.9, 0.32, 1)",
+          }}
+        >
+          {l.ch === " " ? "\u00A0" : l.ch}
+        </span>
+      ))}
+    </span>
+  );
+}
 
-  useEffect(() => {
-    setStudioBeatMuted(muted);
-  }, [muted]);
-
-  const [frame, setFrame] = useState<Scene>({
+function initialScene(light: boolean): Scene {
+  return {
     w: 720,
     ballX: 320,
     ballY: GROUND + BALL_R,
@@ -488,6 +740,11 @@ export function SoccerPlayground({
     mascotX: sitDeskX(),
     facing: -1,
     walk: 0,
+    walkVel: 0,
+    walkPhase: 0,
+    idlePhase: 0,
+    turnT: 0,
+    bob: 0,
     score: 0,
     letters: stillLetters(),
     hint: null,
@@ -505,19 +762,71 @@ export function SoccerPlayground({
     pending: "desk",
     targetX: null,
     kickCd: 0,
-    lookT: 180,
+    lookT: 220,
     lifeT: 0,
     lift: 0,
     hoverMascot: false,
-  });
+    fixIndex: 0,
+    fixHold: 0,
+    fixPlayed: false,
+    lastFixIndex: 0,
+    fixPass: "approach",
+    letterGuard: 0,
+  };
+}
+
+export function SoccerPlayground({
+  muted,
+  light,
+  onTheme,
+  captionClock,
+}: {
+  muted: boolean;
+  light: boolean;
+  onTheme: (light: boolean) => void;
+  goalAnchor?: RefObject<HTMLAnchorElement | null>;
+  captionClock?: string;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const scene = useRef<Scene | null>(null);
+  const drag = useRef<"ball" | "mascot" | null>(null);
+  const last = useRef({ x: 0, y: 0, t: 0 });
+  const visible = useRef(true);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const reducedRef = useRef(false);
+  const [ready, setReady] = useState(false);
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    setStudioBeatMuted(muted);
+  }, [muted]);
+
+  const [frame, setFrame] = useState<Scene>(() => initialScene(light));
+
   useEffect(() => {
     const el = root.current;
     if (!el) return;
 
-    const reduced = prefersReducedMotion();
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const reducedMotion = mq.matches;
+    reducedRef.current = reducedMotion;
+    setReduced(reducedMotion);
+    const onMq = () => {
+      reducedRef.current = mq.matches;
+      setReduced(mq.matches);
+      const sc = scene.current;
+      if (sc && mq.matches) {
+        sc.letters = stillLetters();
+        sc.walkVel = 0;
+        sc.bob = 0;
+      }
+    };
+    mq.addEventListener("change", onMq);
+
     const measure = () => {
       const w = el.clientWidth || 720;
-      readLayout(el, goalAnchor?.current);
+      readLayout(el);
       const s = scene.current;
       if (s) {
         s.w = w;
@@ -526,44 +835,20 @@ export function SoccerPlayground({
           else if (s.activity === "studio") s.mascotX = sitStudioX(w);
         }
       } else {
-        scene.current = {
-          w,
-          ballX: ballResetX(w),
-          ballY: GROUND + BALL_R,
-          ballVx: 0,
-          ballVy: 0,
-          mascotX: sitDeskX(),
-          facing: -1,
-          walk: 0,
-          score: 0,
-          letters: stillLetters(),
-          hint: null,
-          kicking: false,
-          heading: false,
-          hop: 0,
-          lastTouch: null,
-          skills: 0,
-          lampOn: !light,
-          coding: 80,
-          playing: 0,
-          speech: "building Park'r.",
-          speechT: 140,
-          activity: "desk",
-          pending: "desk",
-          targetX: null,
-          kickCd: 0,
-          lookT: 180,
-          lifeT: 0,
-          lift: 0,
-          hoverMascot: false,
-        };
+        const next = initialScene(light);
+        next.w = w;
+        next.ballX = ballResetX(w);
+        next.mascotX = sitDeskX();
+        if (reducedMotion) next.letters = stillLetters();
+        scene.current = next;
       }
     };
     measure();
+    setReady(true);
     const ro = new ResizeObserver(measure);
     ro.observe(el);
 
-    const align = () => readLayout(root.current, goalAnchor?.current);
+    const align = () => readLayout(root.current);
     align();
     const alignRo = new ResizeObserver(align);
     alignRo.observe(el);
@@ -571,6 +856,17 @@ export function SoccerPlayground({
 
     const io = new IntersectionObserver(([entry]) => {
       visible.current = entry?.isIntersecting ?? false;
+      const s = scene.current;
+      if (!s || !entry?.isIntersecting) return;
+      if (reducedRef.current) {
+        s.letters = stillLetters();
+        s.fixPlayed = true;
+        return;
+      }
+      if (!s.fixPlayed) {
+        s.fixPlayed = true;
+        beginFix(s, false, reducedRef.current);
+      }
     });
     io.observe(el);
 
@@ -578,8 +874,8 @@ export function SoccerPlayground({
     const tick = () => {
       const s = scene.current;
       if (s && visible.current) {
-        readLayout(root.current, goalAnchor?.current);
-        step(s, drag.current, mutedRef.current, reduced);
+        readLayout(root.current);
+        step(s, drag.current, mutedRef.current, reducedRef.current);
         setFrame({ ...s, letters: s.letters.map((l) => ({ ...l })) });
       }
       raf = requestAnimationFrame(tick);
@@ -591,6 +887,7 @@ export function SoccerPlayground({
       ro.disconnect();
       alignRo.disconnect();
       window.removeEventListener("resize", align);
+      mq.removeEventListener("change", onMq);
       io.disconnect();
       stopStudioBeat();
     };
@@ -604,6 +901,22 @@ export function SoccerPlayground({
 
   const kickBall = (s: Scene, towardGoal = false) => {
     playContact(s, mutedRef.current, towardGoal);
+  };
+
+  const replayLetters = () => {
+    const s = scene.current;
+    if (!s) return;
+    if (reducedRef.current) {
+      s.letters = stillLetters();
+      return;
+    }
+    beginFix(s, true, reducedRef.current);
+  };
+
+  const hoverLetters = () => {
+    const s = scene.current;
+    if (!s || reducedRef.current) return;
+    if (lettersNeedFix(s)) beginFix(s, false, false);
   };
 
   const onPointerDown = (kind: "ball" | "mascot") => (e: React.PointerEvent) => {
@@ -638,7 +951,10 @@ export function SoccerPlayground({
       s.ballX = clamp(x, sceneLeft() + BALL_R, ballMaxX(s.w));
       s.ballY = clamp(y, GROUND + BALL_R, 118);
     } else {
+      const prevX = s.mascotX;
       s.mascotX = clamp(x - MASCOT_W / 2, sceneLeft(), sceneRight(s.w) - MASCOT_W);
+      s.walkVel = s.mascotX - prevX;
+      s.walkPhase += 0.08 * Math.min(1.4, Math.abs(s.walkVel) / CRUISE);
       s.facing = e.clientX >= last.current.x ? 1 : -1;
       s.activity = "walk";
       s.targetX = null;
@@ -666,6 +982,7 @@ export function SoccerPlayground({
     if (kind === "mascot") {
       s.lift = 0;
       s.hint = null;
+      s.walkVel = 0;
       if (tap.current) {
         if (s.activity === "desk" || s.activity === "studio") {
           s.speech = pickLine("mascot");
@@ -701,6 +1018,7 @@ export function SoccerPlayground({
   const dx = deskX();
   const sx = studioX(s.w);
   const sit = s.activity === "desk" || s.activity === "studio";
+  const inSceneLetters = lettersInScene(s.w);
   const place =
     s.activity === "desk"
       ? "he's at the desk."
@@ -708,7 +1026,9 @@ export function SoccerPlayground({
         ? "he's in the studio."
         : s.activity === "soccer"
           ? "he's on the pitch."
-          : "he's around.";
+          : s.activity === "fix" || s.pending === "fix"
+            ? "he's setting type."
+            : "he's around.";
 
   return (
     <>
@@ -716,7 +1036,7 @@ export function SoccerPlayground({
         <div
           ref={root}
           className="relative h-48 w-full select-none touch-none"
-          aria-label="Playground. He stays at a station until you grab him or click a spot."
+          aria-label="Playground. He stays at a station until you grab him or click a spot. Tap the signature to straighten the letters."
           onPointerDown={onGroundPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -790,33 +1110,22 @@ export function SoccerPlayground({
           </button>
 
           <span className="sr-only">{SIGNATURE}</span>
-          {s.w >= 640 && (
-            <p
-              aria-hidden
-              className="text-muted-ink absolute left-1/2 -translate-x-1/2 font-mono text-[11px] whitespace-pre"
-              style={{ bottom: GROUND }}
-            >
-              {s.letters.map((l, i) => (
-                <span
-                  key={`${l.ch}-${i}`}
-                  className="inline-block"
-                  style={{
-                    transformOrigin: "left bottom",
-                    transform: `rotate(${l.rot}deg)`,
-                    transition: "transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-                  }}
-                >
-                  {l.ch === " " ? "\u00A0" : l.ch}
-                </span>
-              ))}
-            </p>
+          {inSceneLetters && (
+            <SignatureRow
+              letters={s.letters}
+              onActivate={replayLetters}
+              onHover={hoverLetters}
+              letterWidth={LETTER_W}
+              className="text-muted-ink absolute z-[5] cursor-pointer font-mono text-[11px] whitespace-pre"
+              style={{ left: letterStart(s.w), bottom: GROUND }}
+            />
           )}
 
           <div
             className="text-ink absolute z-10 flex touch-none items-end justify-center"
             style={{
               left: s.mascotX - 12,
-              bottom: GROUND + s.lift + s.hop,
+              bottom: GROUND + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
               width: MASCOT_W + 24,
               height: MASCOT_H + 10,
               cursor: s.lift > 0 ? "grabbing" : "grab",
@@ -840,7 +1149,12 @@ export function SoccerPlayground({
               heading={s.heading}
               facing={s.facing}
               sit={sit && s.lift === 0}
-              walk={s.walk}
+              walkPhase={s.walkPhase}
+              speed={Math.abs(s.walkVel)}
+              idlePhase={s.idlePhase}
+              turnT={s.turnT}
+              bob={s.bob}
+              reduced={reduced}
             />
             {s.speech && (
               <span
@@ -939,69 +1253,81 @@ export function SoccerPlayground({
             <MusicStudio playing={s.activity === "studio" || s.playing > 0} />
           </button>
 
-          <HintChip
-            text="grab."
-            x={s.mascotX + MASCOT_W / 2}
-            y={GROUND + MASCOT_H + 10}
-            show={s.hoverMascot && s.lift === 0 && !s.speech}
-          />
-          <HintChip
-            text="light."
-            x={lampX() + LAMP_W / 2}
-            y={GROUND + 48}
-            show={s.hint === "lamp"}
-          />
-          <HintChip
-            text="the work."
-            x={dx + DESK_W / 2}
-            y={GROUND + 52}
-            show={s.hint === "desk" && s.lift === 0}
-          />
-          <HintChip
-            text="drop to code."
-            x={dx + DESK_W / 2}
-            y={GROUND + 52}
-            show={s.hint === "desk" && s.lift > 0}
-          />
-          <HintChip
-            text="the pitch."
-            x={gx + GOAL_W / 2}
-            y={GROUND + GOAL_H + 8}
-            show={s.hint === "soccer" && s.lift === 0}
-          />
-          <HintChip
-            text="drop to play."
-            x={gx + GOAL_W / 2}
-            y={GROUND + GOAL_H + 8}
-            show={s.hint === "soccer" && s.lift > 0}
-          />
-          <HintChip text="flick the ball." x={s.ballX} y={s.ballY + 14} show={s.hint === "ball"} />
-          <HintChip
-            text="after hours."
-            x={sx + STUDIO_W / 2}
-            y={GROUND + 52}
-            show={s.hint === "studio" && s.lift === 0}
-          />
-          <HintChip
-            text="drop to make music."
-            x={sx + STUDIO_W / 2}
-            y={GROUND + 52}
-            show={s.hint === "studio" && s.lift > 0}
-          />
-        </div>
-      </div>
-      {(captionClock || s.w < 640) && (
-        <p className="text-muted-ink mt-2 text-center font-mono text-[11px] lowercase">
-          {s.w < 640 && (
+          {ready && (
             <>
-              <span aria-hidden className="normal-case">
-                {SIGNATURE}
-              </span>
-              <span aria-hidden> · </span>
+              <HintChip
+                text="grab."
+                x={s.mascotX + MASCOT_W / 2}
+                y={GROUND + MASCOT_H + 10}
+                show={s.hoverMascot && s.lift === 0 && !s.speech}
+              />
+              <HintChip
+                text="light."
+                x={lampX() + LAMP_W / 2}
+                y={GROUND + 48}
+                show={s.hint === "lamp"}
+              />
+              <HintChip
+                text="the work."
+                x={dx + DESK_W / 2}
+                y={GROUND + 52}
+                show={s.hint === "desk" && s.lift === 0}
+              />
+              <HintChip
+                text="drop to code."
+                x={dx + DESK_W / 2}
+                y={GROUND + 52}
+                show={s.hint === "desk" && s.lift > 0}
+              />
+              <HintChip
+                text="the pitch."
+                x={gx + GOAL_W / 2}
+                y={GROUND + GOAL_H + 8}
+                show={s.hint === "soccer" && s.lift === 0}
+              />
+              <HintChip
+                text="drop to play."
+                x={gx + GOAL_W / 2}
+                y={GROUND + GOAL_H + 8}
+                show={s.hint === "soccer" && s.lift > 0}
+              />
+              <HintChip
+                text="flick the ball."
+                x={s.ballX}
+                y={s.ballY + 14}
+                show={s.hint === "ball"}
+              />
+              <HintChip
+                text="after hours."
+                x={sx + STUDIO_W / 2}
+                y={GROUND + 52}
+                show={s.hint === "studio" && s.lift === 0}
+              />
+              <HintChip
+                text="drop to make music."
+                x={sx + STUDIO_W / 2}
+                y={GROUND + 52}
+                show={s.hint === "studio" && s.lift > 0}
+              />
             </>
           )}
-          {captionClock ? `${captionClock} ${place}` : place}
-        </p>
+        </div>
+      </div>
+      {(captionClock || !inSceneLetters) && (
+        <div className="mt-2 text-center">
+          {!inSceneLetters && (
+            <SignatureRow
+              letters={s.letters}
+              onActivate={replayLetters}
+              onHover={hoverLetters}
+              letterWidth={7.4}
+              className="text-muted-ink mb-2 flex h-10 w-full cursor-pointer items-end justify-center overflow-visible font-mono text-[11px] leading-none whitespace-nowrap"
+            />
+          )}
+          <p className="text-muted-ink font-mono text-[11px] lowercase">
+            {captionClock ? `${captionClock} ${place}` : place}
+          </p>
+        </div>
       )}
     </>
   );
@@ -1018,6 +1344,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
   const gx = goalX(s.w);
   const groundY = GROUND + BALL_R;
   const sitting = s.activity === "desk" || s.activity === "studio";
+  const fixing = s.activity === "fix" || s.pending === "fix";
 
   if (s.speechT > 0) s.speechT -= 1;
   else s.speech = "";
@@ -1025,52 +1352,85 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
   if (s.coding > 0) s.coding -= 1;
   if (s.kickCd > 0) s.kickCd -= 1;
   if (s.hop > 0) s.hop = Math.max(0, s.hop - 0.45);
+  s.idlePhase += reduced ? 0 : 0.04;
 
   if (s.activity === "desk") s.coding = Math.max(s.coding, 4);
   if (s.activity === "studio") s.playing = Math.max(s.playing, 4);
 
-  if (dragging === "mascot") {
+  if (reduced) {
+    s.walkVel = 0;
+    s.bob = 0;
+    s.turnT = 0;
+    if (s.pending === "fix" || s.activity === "fix") {
+      s.letters = stillLetters();
+      s.pending = "desk";
+      s.activity = "desk";
+      s.targetX = null;
+      s.mascotX = sitDeskX();
+    } else if (s.targetX != null) {
+      s.mascotX = s.targetX;
+      settle(s, s.pending, muted);
+    }
+  } else if (dragging === "mascot") {
     s.walk += 0.16;
   } else if (s.targetX != null) {
     s.activity = "walk";
-    s.walk += 0.18;
-    const dir: 1 | -1 = s.targetX >= s.mascotX ? 1 : -1;
-    s.facing = dir;
-    const speed = 1.55;
-    if (Math.abs(s.mascotX - s.targetX) <= speed) {
-      s.mascotX = s.targetX;
-      settle(s, s.pending, muted);
-    } else {
-      s.mascotX += speed * dir;
+    const pushing = fixing ? rightPassedLetters(s, muted) : false;
+    const arrived = moveToward(s, s.targetX, pushing ? 0.22 : fixing ? 1.05 : CRUISE);
+    if (arrived) {
+      if (s.pending === "fix") {
+        if (s.fixPass === "approach") {
+          s.fixPass = "sweep";
+          s.targetX = letterEndX(s);
+        } else {
+          s.letters = s.letters.map((l) => (l.ch === " " ? l : { ...l, rot: 0 }));
+          s.speech = "there.";
+          s.speechT = 100;
+          s.fixPass = "approach";
+          s.fixHold = 42;
+          s.activity = "fix";
+          s.pending = "desk";
+          s.targetX = null;
+          s.walkVel = 0;
+          s.letterGuard = 200;
+        }
+      } else {
+        settle(s, s.pending, muted);
+      }
     }
+  } else if (s.activity === "fix" && s.targetX == null) {
+    s.walkVel *= 0.78;
+    s.bob *= 0.85;
+    if (s.fixHold > 0) s.fixHold -= 1;
+    else sendTo(s, sitDeskX(), "desk");
   } else if (s.activity === "soccer" && !reduced) {
     const left = pitchLeft();
     const right = pitchRight(s.w);
     const behind = Math.sign(gx - s.ballX) || 1;
     const high = s.ballY > GROUND + 20;
     const want = clamp(s.ballX - MASCOT_W / 2 - (high ? 0 : 10) * behind, left, right);
-    const d = want - s.mascotX;
-    if (Math.abs(d) > 1.1) {
-      s.walk += 0.24;
-      s.facing = d > 0 ? 1 : -1;
-      s.mascotX = clamp(s.mascotX + Math.sign(d) * 1.7, left, right);
-    }
+    if (Math.abs(want - s.mascotX) > 1.1) moveToward(s, want, 1.55);
+    else s.walkVel *= 0.8;
   } else if (sitting) {
     s.lifeT += 1;
+    s.walkVel = 0;
+    s.bob = 0;
     if (s.activity === "desk" && s.lifeT % 42 === 0) playTone(muted, 1400, 0.02, "square", 0.012);
     if (s.activity === "desk" && s.lifeT % 520 === 0 && s.speechT <= 0) {
       s.speech = Math.random() < 0.55 ? "building Park'r." : pickLine("mascot");
       s.speechT = 130;
     }
   } else {
+    s.walkVel *= 0.84;
+    s.bob *= 0.9;
     s.lookT -= 1;
     if (s.lookT <= 0) {
-      s.facing = s.facing === 1 ? -1 : 1;
-      s.lookT = 140 + Math.floor(Math.random() * 180);
+      finishTurn(s, s.facing === 1 ? -1 : 1);
+      if (s.turnT <= 0) s.lookT = 220 + Math.floor(Math.random() * 240);
     }
   }
 
-  if (dragging !== "ball" && !sitting) {
+  if (dragging !== "ball" && !sitting && !fixing && s.letterGuard <= 0) {
     playContact(s, muted, true);
   }
   if (s.kickCd <= 10) s.kicking = false;
@@ -1104,21 +1464,26 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     }
   }
 
-  const mx = s.mascotX + MASCOT_W / 2;
-  const mid = s.w / 2;
-  const letterW = 6.2;
-  const start = mid - (SIGNATURE.length * letterW) / 2;
-  s.letters = s.letters.map((l, i) => {
-    if (l.ch === " ") return l;
-    const lx = start + i * letterW;
-    const hitBall = Math.abs(s.ballX - lx) < 8 && s.ballY < GROUND + 18 && Math.abs(s.ballVx) > 0.6;
-    const hitMascot = Math.abs(mx - lx) < 10;
-    if (hitBall || hitMascot) {
-      const dir = (s.ballX < lx ? 1 : -1) * (48 + Math.min(40, Math.abs(s.ballVx) * 8));
-      return { ...l, rot: clamp(dir, -100, 100) };
-    }
-    return { ...l, rot: l.rot * 0.86 };
-  });
+  if (s.letterGuard > 0) s.letterGuard -= 1;
+  if (!fixing && !reduced && s.letterGuard <= 0) {
+    const mx = s.mascotX + MASCOT_W / 2;
+    const start = lettersInScene(s.w) ? letterStart(s.w) : -9999;
+    s.letters = s.letters.map((l, i) => {
+      if (l.ch === " " || Math.abs(l.rot) > 6) return l;
+      const lx = start + i * LETTER_W;
+      const hitBall =
+        lettersInScene(s.w) &&
+        Math.abs(s.ballX - lx) < 8 &&
+        s.ballY < GROUND + 18 &&
+        Math.abs(s.ballVx) > 0.7;
+      const hitMascot = lettersInScene(s.w) && Math.abs(mx - lx) < 9 && Math.abs(s.walkVel) > 0.45;
+      if (hitBall || hitMascot) {
+        const dir = (hitBall ? s.ballX < lx : mx < lx) ? 1 : -1;
+        return { ...l, rot: dir * (76 + Math.min(18, Math.abs(s.ballVx) * 4)) };
+      }
+      return l;
+    });
+  }
 
   const inGoal =
     s.ballX > gx + 6 &&
