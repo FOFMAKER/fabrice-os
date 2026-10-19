@@ -3,19 +3,42 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@/lib/play-tone";
 
 const SIGNATURE = "built by fabrice";
-const BALL_R = 7;
-const MASCOT_W = 28;
-const MASCOT_H = 56;
-const GROUND = 18;
-const GOAL_W = 36;
-const GOAL_H = 48;
-const DESK_W = 78;
-const STUDIO_W = 68;
-const LAMP_W = 18;
+const BALL_R = 9;
+const MASCOT_W = 36;
+const MASCOT_H = 100;
+const SPRITE_W = 64;
+const SPRITE_H = 100;
+const SPRITE_COLS = 12;
+const MARK_W = 13;
+const MARK_H = 9;
+const GROUND = 20;
+const GOAL_W = 40;
+const GOAL_H = 52;
+const DESK_W = 82;
+const STUDIO_W = 72;
+const LAMP_W = 20;
+const FURN_H = 52;
 const PAD = 14;
 const LETTER_W = 7.1;
-const CRUISE = 1.18;
-const ACCEL = 0.055;
+const CRUISE = 1.28;
+const ACCEL = 0.06;
+const HERO_SRC = "/mascot/hero.png";
+const MARK_SRC = "/mascot/mark-28.png";
+/** Bib-center per sheet column so the cream 28 can be drawn un-mirrored. */
+const BIB = [
+  { x: 35, y: 38 },
+  { x: 35, y: 39 },
+  { x: 35, y: 39 },
+  { x: 35, y: 38 },
+  { x: 39, y: 40 },
+  { x: 40, y: 40 },
+  { x: 40, y: 40 },
+  { x: 35, y: 38 },
+  { x: 35, y: 38 },
+  { x: 39, y: 39 },
+  { x: 31, y: 38 },
+  { x: 35, y: 42 },
+] as const;
 
 let goalLock = false;
 
@@ -105,7 +128,7 @@ function deskX() {
 }
 
 function sitDeskX() {
-  return deskX() + 48;
+  return deskX() + 50;
 }
 
 function studioGap(w: number) {
@@ -452,11 +475,40 @@ function walkPose(phase: number): WalkPose {
   return frames[Math.floor(p * n) % n]!;
 }
 
+function spriteCol({
+  sit,
+  bending,
+  kicking,
+  heading,
+  hop,
+  moving,
+  walkPhase,
+}: {
+  sit: boolean;
+  bending: boolean;
+  kicking: boolean;
+  heading: boolean;
+  hop: number;
+  moving: boolean;
+  walkPhase: number;
+}) {
+  if (sit) return 11;
+  if (bending) return 10;
+  if (kicking || heading || hop > 5) return 9;
+  if (moving) {
+    const p = ((walkPhase % 1) + 1) % 1;
+    return 1 + (Math.floor(p * 8) % 8);
+  }
+  return 0;
+}
+
 function PixelMascot({
   kicking,
   heading,
   facing,
   sit,
+  bending,
+  hop,
   walkPhase,
   speed,
   idlePhase,
@@ -468,6 +520,8 @@ function PixelMascot({
   heading: boolean;
   facing: 1 | -1;
   sit: boolean;
+  bending: boolean;
+  hop: number;
   walkPhase: number;
   speed: number;
   idlePhase: number;
@@ -475,221 +529,57 @@ function PixelMascot({
   bob: number;
   reduced: boolean;
 }) {
-  const moving = !sit && !reduced && speed > 0.16 && !kicking && !heading;
+  const moving = !sit && !reduced && speed > 0.16 && !kicking && !heading && !bending;
   const turning = !reduced && turnT > 0;
-  const pose = walkPose(walkPhase);
   const breath = reduced ? 0 : Math.sin(idlePhase);
-  const shift = sit || moving || reduced || turning ? 0 : Math.sin(idlePhase * 0.42) * 0.9;
-  const bobY = reduced ? 0 : sit ? breath * 0.3 : moving ? bob : turning ? 0.2 : breath * 0.5;
-  const squash = turning ? 0.78 + 0.22 * (Math.abs(turnT - 9) / 9) : 1;
-
-  const headY = sit ? 6 : heading ? 1 : 1 - bobY * 0.25;
-  const hipY = sit ? 22 : 22 - bobY * 0.3;
-  const armY = sit ? 15 : 14 - bobY * 0.4;
-
-  const idleLeg = reduced || sit || moving ? 0 : shift * 5;
-  const legLRot = sit ? 8 : kicking ? -10 : heading ? 10 : turning ? 10 : moving ? pose.l : idleLeg;
-  const legRRot = sit
-    ? -6
-    : kicking
-      ? 42
-      : heading
-        ? -8
-        : turning
-          ? -8
-          : moving
-            ? pose.r
-            : -idleLeg * 0.35;
-  const armLRot = sit
-    ? 22
-    : kicking
-      ? 18
-      : heading
-        ? -32
-        : turning
-          ? 8
-          : moving
-            ? pose.al
-            : 7 + breath * 3;
-  const armRRot = sit
-    ? -12
-    : kicking
-      ? -24
-      : heading
-        ? -24
-        : turning
-          ? -6
-          : moving
-            ? pose.ar
-            : -5 - breath * 3;
-
-  const lean = heading ? -14 : moving ? 4 : turning ? 3 : shift * 2.2;
-  const sleeveH = sit ? 5.5 : 8.2;
-  const pantH = sit ? 5.2 : 9.6;
-  const shirt = "var(--hero-shirt)";
-  const plaid = "var(--hero-plaid)";
-  const kerchief = "var(--hero-kerchief)";
-  const denim = "var(--hero-denim)";
-  const skin = "var(--hero-skin)";
-  const shade = "var(--hero-shade)";
-  const shoe = "var(--hero-shoe)";
-  const stripe = "var(--hero-stripe)";
-  const glove = "var(--hero-glove)";
-  const hair = "var(--hero-hair)";
-  const button = "var(--hero-button)";
-
-  const plaidDots = (x: number, y: number, cols: number, rows: number) => {
-    const dots = [];
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        if ((r + c) % 2 === 0) {
-          dots.push(
-            <rect
-              key={`${x}-${y}-${r}-${c}`}
-              x={x + c * 1.3}
-              y={y + r * 1.3}
-              width="1.05"
-              height="1.05"
-              fill={plaid}
-            />,
-          );
-        }
-      }
-    }
-    return dots;
-  };
+  const bobY = reduced ? 0 : sit ? breath * 0.35 : moving ? bob : turning ? 0.2 : breath * 0.55;
+  const squash = turning ? 0.84 + 0.16 * (Math.abs(turnT - 9) / 9) : 1;
+  const lean = heading ? -8 : moving ? 3 : turning ? 2 : 0;
+  const col = spriteCol({ sit, bending, kicking, heading, hop, moving, walkPhase });
+  const bib = BIB[col] ?? BIB[0]!;
+  const markLeft =
+    facing === 1 ? bib.x - Math.floor(MARK_W / 2) : SPRITE_W - bib.x - Math.ceil(MARK_W / 2);
 
   return (
-    <svg
-      width={MASCOT_W}
-      height={MASCOT_H}
-      viewBox="0 0 18 36"
+    <div
       aria-hidden
-      className="overflow-visible"
+      className="relative overflow-visible"
       style={{
-        transform: `scaleX(${facing * squash}) rotate(${lean}deg)`,
+        width: SPRITE_W,
+        height: SPRITE_H,
+        transform: `translateY(${-bobY}px) scaleX(${squash}) scaleY(${1 + breath * (sit ? 0.008 : 0.012)}) rotate(${lean}deg)`,
         transformOrigin: "center bottom",
-        shapeRendering: "crispEdges",
       }}
     >
-      <g transform={`translate(${shift}, ${-bobY})`}>
-        <g transform={`rotate(${armLRot} 5.4 ${armY})`}>
-          <rect x="4.2" y={armY} width="2.4" height={sleeveH} fill={shirt} />
-          {plaidDots(4.3, armY + 0.4, 2, sit ? 3 : 5)}
-          <rect x="3.8" y={armY + sleeveH - 0.3} width="3.2" height="2.8" fill={glove} />
-          <rect
-            x="3.8"
-            y={armY + sleeveH - 0.3}
-            width="3.2"
-            height="2.8"
-            fill="none"
-            stroke={hair}
-            strokeWidth="0.3"
-          />
-        </g>
-
-        <rect x="6.1" y={headY + 12} width="6.2" height={sit ? 8 : 10} fill={shirt} />
-        {plaidDots(6.3, headY + 12.2, 4, 3)}
-        <rect x="6.2" y={headY + 12.2} width="1.7" height="3.2" fill={denim} />
-        <rect x="10.1" y={headY + 12.2} width="1.7" height="3.2" fill={denim} />
-        <rect x="6.1" y={headY + 14.2} width="6.2" height={sit ? 6 : 7.2} fill={denim} />
-        <rect x="7.2" y={headY + 15.6} width="1.5" height="1.5" fill={button} />
-        <rect x="9.6" y={headY + 15.6} width="1.5" height="1.5" fill={button} />
-
-        <rect x="5.3" y={headY + 3.4} width="7.8" height="8.4" fill={skin} />
-        <rect x="11.6" y={headY + 6.8} width="1.6" height="4.2" fill={shade} />
-        <rect x="5.8" y={headY + 1.6} width="6.8" height="2.6" fill={hair} />
-        <rect x="5.2" y={headY + 2.4} width="8" height="2.8" fill={hair} />
-        <rect x="4.8" y={headY + 4.2} width="1.6" height="3.6" fill={hair} />
-        <rect x="12.2" y={headY + 4.4} width="1.4" height="3.2" fill={hair} />
-        <rect x="5.3" y={headY + 4.8} width="7.8" height="1.15" fill={hair} />
-        <rect x="7.5" y={headY + 6.5} width="1.25" height="1.5" fill={hair} />
-        <rect x="10.4" y={headY + 6.5} width="1.25" height="1.5" fill={hair} />
-        <rect x="12.1" y={headY + 7} width="2.6" height="2.5" rx="1.1" fill={shade} />
-        <rect x="12.35" y={headY + 7.15} width="1.5" height="1.4" fill={skin} />
-        <rect x="5.6" y={headY + 9} width="8.4" height="2.4" fill={hair} />
-        <rect x="5" y={headY + 10} width="2.4" height="2" fill={hair} />
-        <rect x="12.4" y={headY + 10} width="2.6" height="2" fill={hair} />
-
-        <rect x="5.8" y={headY + 11.6} width="6.6" height="1.6" fill={kerchief} />
-        <rect x="11.6" y={headY + 12.4} width="2.2" height="2.4" fill={kerchief} />
-        <rect x="12.8" y={headY + 14.2} width="1.4" height="1.8" fill={kerchief} />
-
-        <g transform={`rotate(${armRRot} 12.6 ${armY})`}>
-          <rect x="11.4" y={armY} width="2.4" height={sleeveH} fill={shirt} />
-          {plaidDots(11.5, armY + 0.4, 2, sit ? 3 : 5)}
-          <rect x="11" y={armY + sleeveH - 0.3} width="3.2" height="2.8" fill={glove} />
-          <rect
-            x="11"
-            y={armY + sleeveH - 0.3}
-            width="3.2"
-            height="2.8"
-            fill="none"
-            stroke={hair}
-            strokeWidth="0.3"
-          />
-        </g>
-
-        {sit ? (
-          <>
-            <rect x="5.8" y={hipY} width="6.6" height="2.4" fill={denim} />
-            <rect x="5.6" y={hipY + 2} width="2.8" height="4.2" fill={denim} />
-            <rect x="9.8" y={hipY + 2} width="2.8" height="4.2" fill={denim} />
-            <rect
-              x="5.3"
-              y={hipY + 5.6}
-              width="3.4"
-              height="2.6"
-              fill={shoe}
-              stroke={hair}
-              strokeWidth="0.3"
-            />
-            <rect x="5.3" y={hipY + 6.6} width="3.4" height="0.7" fill={stripe} />
-            <rect
-              x="9.5"
-              y={hipY + 5.6}
-              width="3.4"
-              height="2.6"
-              fill={shoe}
-              stroke={hair}
-              strokeWidth="0.3"
-            />
-            <rect x="9.5" y={hipY + 6.6} width="3.4" height="0.7" fill={stripe} />
-          </>
-        ) : (
-          <>
-            <g transform={`rotate(${legLRot} 7.4 ${hipY})`}>
-              <rect x="6.1" y={hipY} width="2.8" height={pantH} fill={denim} />
-              <rect
-                x="5.5"
-                y={hipY + pantH - 0.15}
-                width="4"
-                height="2.7"
-                fill={shoe}
-                stroke={hair}
-                strokeWidth="0.3"
-              />
-              <rect x="5.5" y={hipY + pantH + 0.85} width="4" height="0.7" fill={stripe} />
-              <rect x="5.5" y={hipY + pantH + 2.15} width="4" height="0.45" fill={hair} />
-            </g>
-            <g transform={`rotate(${legRRot} 11.1 ${hipY})`}>
-              <rect x="9.7" y={hipY} width="2.8" height={pantH} fill={denim} />
-              <rect
-                x="9.1"
-                y={hipY + pantH - 0.15}
-                width="4"
-                height="2.7"
-                fill={shoe}
-                stroke={hair}
-                strokeWidth="0.3"
-              />
-              <rect x="9.1" y={hipY + pantH + 0.85} width="4" height="0.7" fill={stripe} />
-              <rect x="9.1" y={hipY + pantH + 2.15} width="4" height="0.45" fill={hair} />
-            </g>
-          </>
-        )}
-      </g>
-    </svg>
+      <div
+        style={{
+          width: SPRITE_W,
+          height: SPRITE_H,
+          backgroundImage: `url(${HERO_SRC})`,
+          backgroundRepeat: "no-repeat",
+          backgroundSize: `${SPRITE_W * SPRITE_COLS}px ${SPRITE_H}px`,
+          backgroundPosition: `${-col * SPRITE_W}px 0px`,
+          imageRendering: "pixelated",
+          transform: `scaleX(${facing})`,
+          transformOrigin: "center bottom",
+        }}
+      />
+      <img
+        src={MARK_SRC}
+        alt=""
+        width={MARK_W}
+        height={MARK_H}
+        draggable={false}
+        className="pointer-events-none absolute"
+        style={{
+          left: markLeft,
+          top: bib.y - Math.floor(MARK_H / 2),
+          width: MARK_W,
+          height: MARK_H,
+          imageRendering: "pixelated",
+        }}
+      />
+    </div>
   );
 }
 
@@ -707,7 +597,7 @@ function SoccerBall() {
 
 function Lamp({ on }: { on: boolean }) {
   return (
-    <svg width={LAMP_W} height={42} viewBox="0 0 18 42" aria-hidden className="overflow-visible">
+    <svg width={LAMP_W} height={52} viewBox="0 0 18 42" aria-hidden className="overflow-visible">
       <rect x="8" y="14" width="1.6" height="22" fill="currentColor" />
       <rect x="6" y="35" width="6" height="2" fill="currentColor" />
       <path d="M5 14 L9 4 L13 14 Z" fill="currentColor" />
@@ -718,7 +608,13 @@ function Lamp({ on }: { on: boolean }) {
 
 function CodingDesk({ coding }: { coding: boolean }) {
   return (
-    <svg width={DESK_W} height={48} viewBox="0 0 78 48" aria-hidden className="overflow-visible">
+    <svg
+      width={DESK_W}
+      height={FURN_H}
+      viewBox="0 0 78 48"
+      aria-hidden
+      className="overflow-visible"
+    >
       <rect x="2" y="28" width="50" height="3" fill="currentColor" />
       <rect x="6" y="31" width="2.2" height="11" fill="currentColor" />
       <rect x="46" y="31" width="2.2" height="11" fill="currentColor" />
@@ -747,7 +643,13 @@ function CodingDesk({ coding }: { coding: boolean }) {
 
 function MusicStudio({ playing }: { playing: boolean }) {
   return (
-    <svg width={STUDIO_W} height={48} viewBox="0 0 68 48" aria-hidden className="overflow-visible">
+    <svg
+      width={STUDIO_W}
+      height={FURN_H}
+      viewBox="0 0 68 48"
+      aria-hidden
+      className="overflow-visible"
+    >
       <rect x="22" y="30" width="26" height="6" rx="1" fill="currentColor" />
       {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
         <rect
@@ -1069,7 +971,7 @@ export function SoccerPlayground({
       s.ballVx = ((x - (last.current.x - rect.left)) / dt) * 16;
       s.ballVy = ((y - prevY) / dt) * 16;
       s.ballX = clamp(x, sceneLeft() + BALL_R, ballMaxX(s.w));
-      s.ballY = clamp(y, GROUND + BALL_R, 118);
+      s.ballY = clamp(y, GROUND + BALL_R, 200);
     } else {
       const prevX = s.mascotX;
       s.mascotX = clamp(x - MASCOT_W / 2, sceneLeft(), sceneRight(s.w) - MASCOT_W);
@@ -1155,7 +1057,7 @@ export function SoccerPlayground({
       <div className="relative mt-4 w-full overflow-x-clip">
         <div
           ref={root}
-          className="relative h-48 w-full select-none touch-none"
+          className="relative h-72 w-full select-none touch-none"
           aria-label="Playground. He stays at a station until you grab him or click a spot. Tap the signature to straighten the letters."
           onPointerDown={onGroundPointerDown}
           onPointerMove={onPointerMove}
@@ -1174,7 +1076,7 @@ export function SoccerPlayground({
           <button
             type="button"
             className="text-ink absolute cursor-crosshair"
-            style={{ left: lampX(), bottom: GROUND, width: LAMP_W, height: 42 }}
+            style={{ left: lampX(), bottom: GROUND, width: LAMP_W, height: 52 }}
             aria-label={light ? "Turn lamp on, dark mode" : "Turn lamp off, light mode"}
             onClick={() => {
               if (!scene.current) return;
@@ -1212,7 +1114,7 @@ export function SoccerPlayground({
           <button
             type="button"
             className="text-ink absolute cursor-crosshair"
-            style={{ left: dx, bottom: GROUND, width: DESK_W, height: 48 }}
+            style={{ left: dx, bottom: GROUND, width: DESK_W, height: FURN_H }}
             aria-label="Coding desk"
             onClick={() => {
               if (!scene.current) return;
@@ -1244,9 +1146,9 @@ export function SoccerPlayground({
           <div
             className="text-ink absolute z-10 flex touch-none items-end justify-center"
             style={{
-              left: s.mascotX - 12,
+              left: s.mascotX - (SPRITE_W - MASCOT_W) / 2,
               bottom: GROUND + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
-              width: MASCOT_W + 24,
+              width: SPRITE_W,
               height: MASCOT_H + 10,
               cursor: s.lift > 0 ? "grabbing" : "grab",
             }}
@@ -1261,7 +1163,7 @@ export function SoccerPlayground({
             {(s.hoverMascot || s.lift > 0) && (
               <span
                 aria-hidden
-                className="border-ink/50 pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed"
+                className="border-ink/50 pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed"
               />
             )}
             <PixelMascot
@@ -1269,6 +1171,12 @@ export function SoccerPlayground({
               heading={s.heading}
               facing={s.facing}
               sit={sit && s.lift === 0}
+              bending={
+                (s.activity === "fix" || s.pending === "fix") &&
+                s.fixPass === "sweep" &&
+                s.fixHold > 0
+              }
+              hop={s.hop}
               walkPhase={s.walkPhase}
               speed={Math.abs(s.walkVel)}
               idlePhase={s.idlePhase}
@@ -1289,10 +1197,10 @@ export function SoccerPlayground({
           <div
             className="text-ink absolute z-20 touch-none"
             style={{
-              left: s.ballX - 14,
+              left: s.ballX - BALL_R - 5,
               bottom: s.ballY - BALL_R,
-              width: 28,
-              height: 28,
+              width: BALL_R * 2 + 10,
+              height: BALL_R * 2 + 10,
               cursor: "grab",
             }}
             onPointerDown={onPointerDown("ball")}
@@ -1357,7 +1265,7 @@ export function SoccerPlayground({
           <button
             type="button"
             className="text-ink absolute cursor-crosshair"
-            style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: 48 }}
+            style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: FURN_H }}
             aria-label="Music studio"
             onClick={() => {
               if (!scene.current) return;
@@ -1384,19 +1292,19 @@ export function SoccerPlayground({
               <HintChip
                 text="light."
                 x={lampX() + LAMP_W / 2}
-                y={GROUND + 48}
+                y={GROUND + 56}
                 show={s.hint === "lamp"}
               />
               <HintChip
                 text="the work."
                 x={dx + DESK_W / 2}
-                y={GROUND + 52}
+                y={GROUND + FURN_H + 8}
                 show={s.hint === "desk" && s.lift === 0}
               />
               <HintChip
                 text="drop to code."
                 x={dx + DESK_W / 2}
-                y={GROUND + 52}
+                y={GROUND + FURN_H + 8}
                 show={s.hint === "desk" && s.lift > 0}
               />
               <HintChip
@@ -1420,13 +1328,13 @@ export function SoccerPlayground({
               <HintChip
                 text="after hours."
                 x={sx + STUDIO_W / 2}
-                y={GROUND + 52}
+                y={GROUND + FURN_H + 8}
                 show={s.hint === "studio" && s.lift === 0}
               />
               <HintChip
                 text="drop to make music."
                 x={sx + STUDIO_W / 2}
-                y={GROUND + 52}
+                y={GROUND + FURN_H + 8}
                 show={s.hint === "studio" && s.lift > 0}
               />
             </>
@@ -1592,8 +1500,8 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       s.ballX = maxX;
       if (s.ballVx > 0) s.ballVx *= -0.4;
     }
-    if (s.ballY > 118) {
-      s.ballY = 118;
+    if (s.ballY > 200) {
+      s.ballY = 200;
       s.ballVy *= -0.4;
     }
   }
