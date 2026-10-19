@@ -153,6 +153,17 @@
   --line: oklch(0.28 0.008 70);
   --action: oklch(0.72 0.13 258);
   --positive: oklch(0.82 0.18 148);
+  --hero-shirt: oklch(0.78 0.1 88);
+  --hero-plaid: oklch(0.62 0.09 75);
+  --hero-kerchief: oklch(0.58 0.16 28);
+  --hero-denim: oklch(0.52 0.07 258);
+  --hero-skin: #c68b59;
+  --hero-shade: #a86f42;
+  --hero-shoe: oklch(0.9 0.01 90);
+  --hero-stripe: oklch(0.28 0.02 250);
+  --hero-glove: oklch(0.92 0.01 90);
+  --hero-hair: #3d2a22;
+  --hero-button: oklch(0.82 0.12 88);
 }
 
 :root.light {
@@ -163,6 +174,17 @@
   --line: oklch(0.86 0.014 82);
   --action: oklch(0.52 0.15 258);
   --positive: oklch(0.55 0.14 148);
+  --hero-shirt: oklch(0.74 0.11 88);
+  --hero-plaid: oklch(0.58 0.1 72);
+  --hero-kerchief: oklch(0.52 0.17 28);
+  --hero-denim: oklch(0.4 0.08 258);
+  --hero-skin: #c68b59;
+  --hero-shade: #a86f42;
+  --hero-shoe: oklch(0.99 0.004 95);
+  --hero-stripe: oklch(0.26 0.03 250);
+  --hero-glove: oklch(0.97 0.008 90);
+  --hero-hair: #1e1410;
+  --hero-button: oklch(0.78 0.13 88);
 }
 
 @layer base {

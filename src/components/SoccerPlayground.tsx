@@ -4,8 +4,8 @@ import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@
 
 const SIGNATURE = "built by fabrice";
 const BALL_R = 7;
-const MASCOT_W = 26;
-const MASCOT_H = 44;
+const MASCOT_W = 28;
+const MASCOT_H = 56;
 const GROUND = 18;
 const GOAL_W = 36;
 const GOAL_H = 48;
@@ -44,6 +44,7 @@ type Scene = {
   kicking: boolean;
   heading: boolean;
   hop: number;
+  hopVy: number;
   lastTouch: "foot" | "head" | null;
   skills: number;
   lampOn: boolean;
@@ -87,6 +88,10 @@ function prefersReducedMotion() {
 function clamp(n: number, min: number, max: number) {
   if (max < min) return min;
   return Math.min(max, Math.max(min, n));
+}
+
+function bounce(s: Scene, v: number) {
+  if (s.hopVy < v) s.hopVy = v;
 }
 
 let colLeftX = PAD;
@@ -221,8 +226,8 @@ function rightPassedLetters(s: Scene, muted: boolean) {
   s.lastFixIndex = i + 1;
   s.fixIndex = i + 1;
   s.fixHold = 8;
-  s.hop = 2.4;
   playTone(muted, 360 + i * 14, 0.03, "square", 0.018);
+  if (nextFixIndex(s, s.lastFixIndex) >= s.letters.length) bounce(s, 3.5);
   return true;
 }
 
@@ -301,7 +306,7 @@ function playContact(s: Scene, muted: boolean, towardGoal = true) {
     s.ballVx = dir * (2.6 + Math.random() * 0.7);
     s.ballVy = 2.1 + Math.random() * 0.6;
     s.heading = true;
-    s.hop = 7;
+    bounce(s, 3.2);
     s.kicking = false;
     s.lastTouch = "head";
     s.skills += 1;
@@ -423,7 +428,7 @@ function moveToward(s: Scene, x: number, cruise = CRUISE) {
   s.walkVel = clamp(s.walkVel, -cap, cap);
   s.mascotX += s.walkVel;
   const spd = Math.abs(s.walkVel) / Math.max(0.2, cruise);
-  s.walkPhase += 0.034 * Math.max(0.28, spd);
+  s.walkPhase += 0.029 * Math.max(0.28, spd);
   const pose = walkPose(s.walkPhase);
   s.bob = pose.bob * Math.min(1, spd);
   return false;
@@ -433,14 +438,14 @@ type WalkPose = { l: number; r: number; al: number; ar: number; bob: number };
 
 function walkPose(phase: number): WalkPose {
   const frames: WalkPose[] = [
-    { l: 30, r: -22, al: -26, ar: 24, bob: 0.2 },
-    { l: 22, r: -10, al: -18, ar: 16, bob: 1.7 },
-    { l: 8, r: 4, al: -6, ar: 8, bob: 0.55 },
-    { l: -10, r: 20, al: 14, ar: -12, bob: 0.15 },
-    { l: -22, r: 30, al: 24, ar: -26, bob: 0.2 },
-    { l: -10, r: 22, al: 16, ar: -18, bob: 1.7 },
-    { l: 4, r: 8, al: 8, ar: -6, bob: 0.55 },
-    { l: 20, r: -10, al: -12, ar: 14, bob: 0.15 },
+    { l: 34, r: -24, al: -30, ar: 28, bob: 0.35 },
+    { l: 24, r: -10, al: -20, ar: 18, bob: 2.1 },
+    { l: 8, r: 5, al: -6, ar: 8, bob: 0.7 },
+    { l: -10, r: 22, al: 16, ar: -12, bob: 0.2 },
+    { l: -24, r: 34, al: 28, ar: -30, bob: 0.35 },
+    { l: -10, r: 24, al: 18, ar: -20, bob: 2.1 },
+    { l: 5, r: 8, al: 8, ar: -6, bob: 0.7 },
+    { l: 22, r: -10, al: -12, ar: 16, bob: 0.2 },
   ];
   const n = frames.length;
   const p = ((phase % 1) + 1) % 1;
@@ -474,98 +479,212 @@ function PixelMascot({
   const turning = !reduced && turnT > 0;
   const pose = walkPose(walkPhase);
   const breath = reduced ? 0 : Math.sin(idlePhase);
-  const shift = sit || moving || reduced || turning ? 0 : Math.sin(idlePhase * 0.42) * 1.05;
-  const bobY = reduced ? 0 : sit ? breath * 0.35 : moving ? bob : turning ? 0.2 : breath * 0.55;
+  const shift = sit || moving || reduced || turning ? 0 : Math.sin(idlePhase * 0.42) * 0.9;
+  const bobY = reduced ? 0 : sit ? breath * 0.3 : moving ? bob : turning ? 0.2 : breath * 0.5;
   const squash = turning ? 0.78 + 0.22 * (Math.abs(turnT - 9) / 9) : 1;
 
-  const headY = sit ? 5 : heading ? 0 : 1 - bobY * 0.3;
-  const bodyY = sit ? 12 : heading ? 7 : 8 - bobY;
-  const bodyH = sit ? 6 : heading ? 8 : 9 + (reduced ? 0 : breath * 0.25);
-  const hipY = sit ? 18 : 17 - bobY * 0.35;
-  const armY = sit ? 13 : 10 - bobY * 0.45;
+  const headY = sit ? 6 : heading ? 1 : 1 - bobY * 0.25;
+  const hipY = sit ? 22 : 22 - bobY * 0.3;
+  const armY = sit ? 15 : 14 - bobY * 0.4;
 
-  const idleLeg = reduced || sit || moving ? 0 : shift * 6;
-  const legLRot = sit ? 0 : kicking ? -8 : heading ? 8 : turning ? 10 : moving ? pose.l : idleLeg;
+  const idleLeg = reduced || sit || moving ? 0 : shift * 5;
+  const legLRot = sit ? 8 : kicking ? -10 : heading ? 10 : turning ? 10 : moving ? pose.l : idleLeg;
   const legRRot = sit
-    ? 0
+    ? -6
     : kicking
-      ? 38
+      ? 42
       : heading
-        ? -6
+        ? -8
         : turning
           ? -8
           : moving
             ? pose.r
-            : -idleLeg * 0.4;
+            : -idleLeg * 0.35;
   const armLRot = sit
-    ? 18
+    ? 22
     : kicking
-      ? 16
+      ? 18
       : heading
-        ? -28
+        ? -32
         : turning
           ? 8
           : moving
             ? pose.al
-            : 6 + breath * 3;
+            : 7 + breath * 3;
   const armRRot = sit
-    ? -8
+    ? -12
     : kicking
-      ? -20
+      ? -24
       : heading
-        ? -22
+        ? -24
         : turning
           ? -6
           : moving
             ? pose.ar
-            : -4 - breath * 3;
+            : -5 - breath * 3;
 
-  const lean = heading ? -12 : moving ? 5 : turning ? 3 : shift * 2.4;
+  const lean = heading ? -14 : moving ? 4 : turning ? 3 : shift * 2.2;
+  const sleeveH = sit ? 5.5 : 8.2;
+  const pantH = sit ? 5.2 : 9.6;
+  const shirt = "var(--hero-shirt)";
+  const plaid = "var(--hero-plaid)";
+  const kerchief = "var(--hero-kerchief)";
+  const denim = "var(--hero-denim)";
+  const skin = "var(--hero-skin)";
+  const shade = "var(--hero-shade)";
+  const shoe = "var(--hero-shoe)";
+  const stripe = "var(--hero-stripe)";
+  const glove = "var(--hero-glove)";
+  const hair = "var(--hero-hair)";
+  const button = "var(--hero-button)";
+
+  const plaidDots = (x: number, y: number, cols: number, rows: number) => {
+    const dots = [];
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if ((r + c) % 2 === 0) {
+          dots.push(
+            <rect
+              key={`${x}-${y}-${r}-${c}`}
+              x={x + c * 1.3}
+              y={y + r * 1.3}
+              width="1.05"
+              height="1.05"
+              fill={plaid}
+            />,
+          );
+        }
+      }
+    }
+    return dots;
+  };
 
   return (
     <svg
       width={MASCOT_W}
       height={MASCOT_H}
-      viewBox="0 0 16 28"
+      viewBox="0 0 18 36"
       aria-hidden
       className="overflow-visible"
       style={{
         transform: `scaleX(${facing * squash}) rotate(${lean}deg)`,
         transformOrigin: "center bottom",
+        shapeRendering: "crispEdges",
       }}
     >
       <g transform={`translate(${shift}, ${-bobY})`}>
-        <rect x="4.5" y={headY - 1.5} width="7" height="3" rx="0.6" fill="currentColor" />
-        <rect x="5" y={headY} width="6" height="6" rx="1" fill="currentColor" />
-        <rect x="6.2" y={headY + 2.2} width="1.3" height="1.3" fill="var(--paper)" />
-        <rect x="9" y={headY + 2.2} width="1.3" height="1.3" fill="var(--paper)" />
-        <rect x="5.4" y={bodyY} width="5.2" height={bodyH} fill="currentColor" />
-        <g transform={`rotate(${armLRot} 4.5 ${armY + 1})`}>
-          <rect x="3.3" y={armY} width="2.1" height={sit ? 5 : 6.4} rx="0.4" fill="currentColor" />
-        </g>
-        <g transform={`rotate(${armRRot} 11.5 ${armY + 1})`}>
+        <g transform={`rotate(${armLRot} 5.4 ${armY})`}>
+          <rect x="4.2" y={armY} width="2.4" height={sleeveH} fill={shirt} />
+          {plaidDots(4.3, armY + 0.4, 2, sit ? 3 : 5)}
+          <rect x="3.8" y={armY + sleeveH - 0.3} width="3.2" height="2.8" fill={glove} />
           <rect
-            x="10.5"
-            y={sit ? armY + 1 : armY}
-            width="2.1"
-            height={sit ? 4 : 6.4}
-            rx="0.4"
-            fill="currentColor"
+            x="3.8"
+            y={armY + sleeveH - 0.3}
+            width="3.2"
+            height="2.8"
+            fill="none"
+            stroke={hair}
+            strokeWidth="0.3"
           />
         </g>
+
+        <rect x="6.1" y={headY + 12} width="6.2" height={sit ? 8 : 10} fill={shirt} />
+        {plaidDots(6.3, headY + 12.2, 4, 3)}
+        <rect x="6.2" y={headY + 12.2} width="1.7" height="3.2" fill={denim} />
+        <rect x="10.1" y={headY + 12.2} width="1.7" height="3.2" fill={denim} />
+        <rect x="6.1" y={headY + 14.2} width="6.2" height={sit ? 6 : 7.2} fill={denim} />
+        <rect x="7.2" y={headY + 15.6} width="1.5" height="1.5" fill={button} />
+        <rect x="9.6" y={headY + 15.6} width="1.5" height="1.5" fill={button} />
+
+        <rect x="5.3" y={headY + 3.4} width="7.8" height="8.4" fill={skin} />
+        <rect x="11.6" y={headY + 6.8} width="1.6" height="4.2" fill={shade} />
+        <rect x="5.8" y={headY + 1.6} width="6.8" height="2.6" fill={hair} />
+        <rect x="5.2" y={headY + 2.4} width="8" height="2.8" fill={hair} />
+        <rect x="4.8" y={headY + 4.2} width="1.6" height="3.6" fill={hair} />
+        <rect x="12.2" y={headY + 4.4} width="1.4" height="3.2" fill={hair} />
+        <rect x="5.3" y={headY + 4.8} width="7.8" height="1.15" fill={hair} />
+        <rect x="7.5" y={headY + 6.5} width="1.25" height="1.5" fill={hair} />
+        <rect x="10.4" y={headY + 6.5} width="1.25" height="1.5" fill={hair} />
+        <rect x="12.1" y={headY + 7} width="2.6" height="2.5" rx="1.1" fill={shade} />
+        <rect x="12.35" y={headY + 7.15} width="1.5" height="1.4" fill={skin} />
+        <rect x="5.6" y={headY + 9} width="8.4" height="2.4" fill={hair} />
+        <rect x="5" y={headY + 10} width="2.4" height="2" fill={hair} />
+        <rect x="12.4" y={headY + 10} width="2.6" height="2" fill={hair} />
+
+        <rect x="5.8" y={headY + 11.6} width="6.6" height="1.6" fill={kerchief} />
+        <rect x="11.6" y={headY + 12.4} width="2.2" height="2.4" fill={kerchief} />
+        <rect x="12.8" y={headY + 14.2} width="1.4" height="1.8" fill={kerchief} />
+
+        <g transform={`rotate(${armRRot} 12.6 ${armY})`}>
+          <rect x="11.4" y={armY} width="2.4" height={sleeveH} fill={shirt} />
+          {plaidDots(11.5, armY + 0.4, 2, sit ? 3 : 5)}
+          <rect x="11" y={armY + sleeveH - 0.3} width="3.2" height="2.8" fill={glove} />
+          <rect
+            x="11"
+            y={armY + sleeveH - 0.3}
+            width="3.2"
+            height="2.8"
+            fill="none"
+            stroke={hair}
+            strokeWidth="0.3"
+          />
+        </g>
+
         {sit ? (
           <>
-            <rect x="5" y={hipY} width="6" height="2.2" fill="currentColor" />
-            <rect x="5" y={hipY + 2} width="2.3" height="4" fill="currentColor" />
-            <rect x="8.7" y={hipY + 2} width="2.3" height="4" fill="currentColor" />
+            <rect x="5.8" y={hipY} width="6.6" height="2.4" fill={denim} />
+            <rect x="5.6" y={hipY + 2} width="2.8" height="4.2" fill={denim} />
+            <rect x="9.8" y={hipY + 2} width="2.8" height="4.2" fill={denim} />
+            <rect
+              x="5.3"
+              y={hipY + 5.6}
+              width="3.4"
+              height="2.6"
+              fill={shoe}
+              stroke={hair}
+              strokeWidth="0.3"
+            />
+            <rect x="5.3" y={hipY + 6.6} width="3.4" height="0.7" fill={stripe} />
+            <rect
+              x="9.5"
+              y={hipY + 5.6}
+              width="3.4"
+              height="2.6"
+              fill={shoe}
+              stroke={hair}
+              strokeWidth="0.3"
+            />
+            <rect x="9.5" y={hipY + 6.6} width="3.4" height="0.7" fill={stripe} />
           </>
         ) : (
           <>
-            <g transform={`rotate(${legLRot} 6.2 ${hipY})`}>
-              <rect x="5" y={hipY} width="2.4" height="9.2" rx="0.4" fill="currentColor" />
+            <g transform={`rotate(${legLRot} 7.4 ${hipY})`}>
+              <rect x="6.1" y={hipY} width="2.8" height={pantH} fill={denim} />
+              <rect
+                x="5.5"
+                y={hipY + pantH - 0.15}
+                width="4"
+                height="2.7"
+                fill={shoe}
+                stroke={hair}
+                strokeWidth="0.3"
+              />
+              <rect x="5.5" y={hipY + pantH + 0.85} width="4" height="0.7" fill={stripe} />
+              <rect x="5.5" y={hipY + pantH + 2.15} width="4" height="0.45" fill={hair} />
             </g>
-            <g transform={`rotate(${legRRot} 9.8 ${hipY})`}>
-              <rect x="8.6" y={hipY} width="2.4" height="9.2" rx="0.4" fill="currentColor" />
+            <g transform={`rotate(${legRRot} 11.1 ${hipY})`}>
+              <rect x="9.7" y={hipY} width="2.8" height={pantH} fill={denim} />
+              <rect
+                x="9.1"
+                y={hipY + pantH - 0.15}
+                width="4"
+                height="2.7"
+                fill={shoe}
+                stroke={hair}
+                strokeWidth="0.3"
+              />
+              <rect x="9.1" y={hipY + pantH + 0.85} width="4" height="0.7" fill={stripe} />
+              <rect x="9.1" y={hipY + pantH + 2.15} width="4" height="0.45" fill={hair} />
             </g>
           </>
         )}
@@ -751,6 +870,7 @@ function initialScene(light: boolean): Scene {
     kicking: false,
     heading: false,
     hop: 0,
+    hopVy: 0,
     lastTouch: null,
     skills: 0,
     lampOn: !light,
@@ -1351,7 +1471,17 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
   if (s.playing > 0) s.playing -= 1;
   if (s.coding > 0) s.coding -= 1;
   if (s.kickCd > 0) s.kickCd -= 1;
-  if (s.hop > 0) s.hop = Math.max(0, s.hop - 0.45);
+  if (sitting) {
+    s.hop = 0;
+    s.hopVy = 0;
+  } else if (s.hop > 0 || s.hopVy !== 0) {
+    s.hop += s.hopVy;
+    s.hopVy -= 0.4;
+    if (s.hop <= 0) {
+      s.hop = 0;
+      s.hopVy = 0;
+    }
+  }
   s.idlePhase += reduced ? 0 : 0.04;
 
   if (s.activity === "desk") s.coding = Math.max(s.coding, 4);
@@ -1361,6 +1491,8 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     s.walkVel = 0;
     s.bob = 0;
     s.turnT = 0;
+    s.hop = 0;
+    s.hopVy = 0;
     if (s.pending === "fix" || s.activity === "fix") {
       s.letters = stillLetters();
       s.pending = "desk";
@@ -1382,6 +1514,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
         if (s.fixPass === "approach") {
           s.fixPass = "sweep";
           s.targetX = letterEndX(s);
+          bounce(s, 2.6);
         } else {
           s.letters = s.letters.map((l) => (l.ch === " " ? l : { ...l, rot: 0 }));
           s.speech = "there.";
@@ -1393,6 +1526,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
           s.targetX = null;
           s.walkVel = 0;
           s.letterGuard = 200;
+          bounce(s, 3.6);
         }
       } else {
         settle(s, s.pending, muted);
