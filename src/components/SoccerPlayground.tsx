@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@/lib/play-tone";
 
 const SIGNATURE = "built by fabrice";
-const BALL_R = 13;
+const BALL_R = 6;
+const BALL_HOLD = 7;
 const BALL_FRAMES = 4;
 const MASCOT_W = 30;
 const MASCOT_H = 82;
@@ -229,8 +230,8 @@ function pitchRight(w: number) {
   return (showStudio(w) ? studioX(w) : w - PAD) - MASCOT_W - 8;
 }
 
-function lettersInScene(w: number) {
-  return !compactScene(w) && pitchRight(w) - pitchLeft() > 200;
+function lettersInScene(_w: number) {
+  return false;
 }
 
 function letterStart(w: number) {
@@ -261,7 +262,7 @@ function ballMinX() {
 }
 
 function footBallX(s: Scene) {
-  return s.mascotX + MASCOT_W / 2 + s.facing * (MASCOT_W * 0.38 + 4);
+  return s.mascotX + MASCOT_W / 2 + s.facing * (MASCOT_W * 0.32 + BALL_HOLD);
 }
 
 function readLayout(playground: HTMLElement | null) {
@@ -879,11 +880,11 @@ function applyTrick(s: Scene, muted: boolean) {
     const n = 5;
     const u = t * n;
     const f = u - Math.floor(u);
-    const lift = parabola(f, f < 0.5 ? 12 : 7);
-    s.ballX = cx + s.facing * (12 + 5 * Math.sin(t * Math.PI * n));
+    const lift = parabola(f, f < 0.5 ? 6 : 4);
+    s.ballX = cx + s.facing * (BALL_HOLD + 2 * Math.sin(t * Math.PI * n));
     s.ballY = floor + lift;
-    s.kicking = lift > 5;
-    s.trickCol = lift > 6 ? COL_DRIB_B : COL_DRIB_A;
+    s.kicking = lift > 3;
+    s.trickCol = lift > 3 ? COL_DRIB_B : COL_DRIB_A;
     s.hop = 0;
     if (f < 0.08 && lift > 4) playTone(muted, 240, 0.025, "sine", 0.018);
   } else if (id === "juggle") {
@@ -900,7 +901,8 @@ function applyTrick(s: Scene, muted: boolean) {
     const f = seg - Math.floor(seg);
     const hit = hits[i]!;
     const last = i === hits.length - 1 && f > 0.72;
-    s.ballX = cx + s.facing * (last ? lerp(14, 12, (f - 0.72) / 0.28) : 15);
+    s.ballX =
+      cx + s.facing * (last ? lerp(BALL_HOLD + 1, BALL_HOLD, (f - 0.72) / 0.28) : BALL_HOLD + 1);
     s.ballY = last
       ? lerp(floor + parabola(0.72, hit.h), floor, (f - 0.72) / 0.28)
       : floor + parabola(f, hit.h);
@@ -918,8 +920,8 @@ function applyTrick(s: Scene, muted: boolean) {
     if (t < 0.2) {
       const u = t / 0.2;
       s.trickCol = COL_RAIN_W;
-      s.ballX = cx + s.facing * lerp(12, -14, easeInOut(u));
-      s.ballY = floor + parabola(u, 8);
+      s.ballX = cx + s.facing * lerp(BALL_HOLD, -(BALL_HOLD + 1), easeInOut(u));
+      s.ballY = floor + parabola(u, 4);
       s.kicking = false;
       s.hop = 0;
     } else if (t < 0.78) {
@@ -927,15 +929,15 @@ function applyTrick(s: Scene, muted: boolean) {
       s.trickCol = u < 0.35 ? COL_RAIN_U : u < 0.7 ? COL_HEEL : COL_IDLE;
       s.kicking = u < 0.4;
       s.hop = u < 0.45 ? 6 : 0;
-      s.ballX = cx + s.facing * lerp(-14, 18, easeInOut(u));
+      s.ballX = cx + s.facing * lerp(-(BALL_HOLD + 1), BALL_HOLD + 4, easeInOut(u));
       s.ballY = floor + parabola(u, MASCOT_H + 16);
     } else {
       const u = (t - 0.78) / 0.22;
       s.trickCol = COL_TRAP;
       s.kicking = false;
       s.hop = 0;
-      s.ballX = cx + s.facing * lerp(16, 12, u);
-      s.ballY = lerp(floor + 8, floor, easeInOut(u));
+      s.ballX = cx + s.facing * lerp(BALL_HOLD + 2, BALL_HOLD, u);
+      s.ballY = lerp(floor + 4, floor, easeInOut(u));
     }
     s.walkVel = 0;
   } else {
@@ -944,14 +946,14 @@ function applyTrick(s: Scene, muted: boolean) {
       s.trickCol = a < 1.2 ? COL_AROUND : a < 3.4 ? COL_HEEL : COL_JUG_R;
       s.kicking = true;
       s.hop = Math.sin(a) > 0.4 ? 2 : 0;
-      s.ballX = cx + s.facing * (13 * Math.cos(a));
-      s.ballY = floor + 8 + 20 * Math.max(0, Math.sin(a));
+      s.ballX = cx + s.facing * ((MASCOT_W * 0.42 + BALL_R) * Math.cos(a));
+      s.ballY = floor + 4 + 20 * Math.max(0, Math.sin(a));
     } else {
       const u = (t - 0.82) / 0.18;
       s.trickCol = COL_TRAP;
       s.kicking = false;
       s.hop = 0;
-      s.ballX = lerp(s.ballX, cx + s.facing * 12, u);
+      s.ballX = lerp(s.ballX, cx + s.facing * BALL_HOLD, u);
       s.ballY = lerp(s.ballY, floor, easeInOut(u));
     }
     s.walkVel = 0;
