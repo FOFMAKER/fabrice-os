@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@/lib/play-tone";
 
 const SIGNATURE = "built by fabrice";
-const BALL_R = 9;
+const BALL_R = 12;
 const MASCOT_W = 36;
 const MASCOT_H = 100;
 const SPRITE_W = 64;
@@ -11,19 +11,28 @@ const SPRITE_H = 100;
 const SPRITE_COLS = 12;
 const MARK_W = 13;
 const MARK_H = 9;
-const GROUND = 20;
-const GOAL_W = 40;
-const GOAL_H = 52;
-const DESK_W = 82;
-const STUDIO_W = 72;
-const LAMP_W = 20;
-const FURN_H = 52;
-const PAD = 14;
+const GROUND = 26;
+const GOAL_W = 102;
+const GOAL_H = 128;
+const DESK_W = 156;
+const DESK_H = 84;
+const STUDIO_W = 154;
+const STUDIO_H = 90;
+const LAMP_W = 26;
+const LAMP_H = 96;
+const SCENE_H = 200;
+const BASE_W = 660;
+const PAD = 10;
 const LETTER_W = 7.1;
-const CRUISE = 1.28;
+const CRUISE = 1.35;
 const ACCEL = 0.06;
 const HERO_SRC = "/mascot/hero.png";
 const MARK_SRC = "/mascot/mark-28.png";
+const PROP_LAMP = "/mascot/prop-lamp.png";
+const PROP_DESK = "/mascot/prop-desk.png";
+const PROP_STUDIO = "/mascot/prop-studio.png";
+const PROP_GOAL = "/mascot/prop-goal.png";
+const PROP_BALL = "/mascot/prop-ball.png";
 /** Bib-center per sheet column so the cream 28 can be drawn un-mirrored. */
 const BIB = [
   { x: 35, y: 38 },
@@ -49,6 +58,7 @@ type FixPass = "approach" | "sweep";
 
 type Scene = {
   w: number;
+  scale: number;
   ballX: number;
   ballY: number;
   ballVx: number;
@@ -118,21 +128,27 @@ function bounce(s: Scene, v: number) {
 }
 
 let colLeftX = PAD;
+let sceneScale = 1;
+
+function clientScale(clientW: number) {
+  return clientW < 640 ? Math.min(1, clientW / BASE_W) : 1;
+}
 
 function lampX() {
   return colLeftX;
 }
 
 function deskX() {
-  return lampX() + LAMP_W + 6;
+  return lampX() + LAMP_W + 10;
 }
 
 function sitDeskX() {
-  return deskX() + 50;
+  return deskX() + 114;
 }
 
 function studioGap(w: number) {
-  return w >= 640 ? 84 : 56;
+  if (sceneScale < 1) return 64;
+  return w >= 700 ? 96 : 80;
 }
 
 function studioX(w: number) {
@@ -140,7 +156,7 @@ function studioX(w: number) {
 }
 
 function sitStudioX(w: number) {
-  return studioX(w) + 16;
+  return studioX(w) + 72;
 }
 
 function goalX(w: number) {
@@ -161,16 +177,16 @@ function readLayout(playground: HTMLElement | null) {
   if (!playground || typeof document === "undefined") return;
   const pg = playground.getBoundingClientRect();
   const footer = document.querySelector("footer");
-  if (footer) {
+  if (footer && sceneScale >= 1) {
     const f = footer.getBoundingClientRect();
-    colLeftX = clamp(f.left - pg.left, 0, Math.max(0, playground.clientWidth - 220));
+    colLeftX = clamp(f.left - pg.left, 0, Math.max(0, playground.clientWidth - 280));
   } else {
     colLeftX = PAD;
   }
 }
 
 function ballResetX(w: number) {
-  return clamp(goalX(w) - 90, pitchLeft() + 20, goalX(w) - 36);
+  return clamp(goalX(w) - 120, pitchLeft() + 28, goalX(w) - 48);
 }
 
 function pitchLeft() {
@@ -190,8 +206,9 @@ function ballMaxX(w: number) {
 }
 
 function lettersInScene(w: number) {
-  const span = goalX(w) - (deskX() + DESK_W) - 24;
-  return w >= 640 && span > SIGNATURE.length * LETTER_W + 8;
+  if (sceneScale < 1) return false;
+  const span = goalX(w) - (deskX() + DESK_W) - 16;
+  return w >= 640 && span > 80;
 }
 
 function letterStart(w: number) {
@@ -307,23 +324,23 @@ function dropZone(s: Scene): Activity {
 
 function nearBall(s: Scene, extra = 0) {
   const mx = s.mascotX + MASCOT_W / 2;
-  return Math.abs(s.ballX - mx) < 18 + extra;
+  return Math.abs(s.ballX - mx) < 24 + extra;
 }
 
 function atHead(s: Scene) {
   const head = GROUND + MASCOT_H - 4;
-  return s.ballY > head - 14 && s.ballY < head + 12;
+  return s.ballY > head - 16 && s.ballY < head + 14;
 }
 
 function atFoot(s: Scene) {
-  return s.ballY <= GROUND + 22;
+  return s.ballY <= GROUND + BALL_R + 10;
 }
 
 function playContact(s: Scene, muted: boolean, towardGoal = true) {
   if (s.kickCd > 0 || !nearBall(s, 6)) return;
   const gx = goalX(s.w);
   const dir = towardGoal ? Math.sign(gx - s.ballX) || 1 : s.facing;
-  const nearGoal = s.ballX > gx - 70;
+  const nearGoal = s.ballX > gx - 90;
 
   if (atHead(s)) {
     s.ballVx = dir * (2.6 + Math.random() * 0.7);
@@ -583,102 +600,33 @@ function PixelMascot({
   );
 }
 
-function SoccerBall() {
+function PixelProp({
+  src,
+  width,
+  height,
+  frame = 0,
+  frames = 1,
+}: {
+  src: string;
+  width: number;
+  height: number;
+  frame?: number;
+  frames?: number;
+}) {
   return (
-    <svg width={BALL_R * 2} height={BALL_R * 2} viewBox="0 0 14 14" aria-hidden>
-      <circle cx="7" cy="7" r="6.6" fill="var(--ink)" />
-      <path d="M7 3.6 L9.1 5 L8.4 7.2 L5.6 7.2 L4.9 5 Z" fill="var(--paper)" />
-      <path d="M2.8 8.2 L4.6 7.2 L4.9 9.4 L3.4 10.8 Z" fill="var(--paper)" />
-      <path d="M11.2 8.2 L9.4 7.2 L9.1 9.4 L10.6 10.8 Z" fill="var(--paper)" />
-      <circle cx="7" cy="7" r="6.6" fill="none" stroke="var(--paper)" strokeWidth="0.55" />
-    </svg>
-  );
-}
-
-function Lamp({ on }: { on: boolean }) {
-  return (
-    <svg width={LAMP_W} height={52} viewBox="0 0 18 42" aria-hidden className="overflow-visible">
-      <rect x="8" y="14" width="1.6" height="22" fill="currentColor" />
-      <rect x="6" y="35" width="6" height="2" fill="currentColor" />
-      <path d="M5 14 L9 4 L13 14 Z" fill="currentColor" />
-      {on && <ellipse cx="9" cy="16" rx="7" ry="5" fill="oklch(0.85 0.12 85)" opacity="0.28" />}
-    </svg>
-  );
-}
-
-function CodingDesk({ coding }: { coding: boolean }) {
-  return (
-    <svg
-      width={DESK_W}
-      height={FURN_H}
-      viewBox="0 0 78 48"
+    <div
       aria-hidden
-      className="overflow-visible"
-    >
-      <rect x="2" y="28" width="50" height="3" fill="currentColor" />
-      <rect x="6" y="31" width="2.2" height="11" fill="currentColor" />
-      <rect x="46" y="31" width="2.2" height="11" fill="currentColor" />
-      <rect x="12" y="6" width="26" height="18" rx="1.5" fill="currentColor" />
-      <rect x="14" y="8" width="22" height="14" fill="var(--paper)" />
-      <rect
-        x="16"
-        y="11"
-        width="10"
-        height="1.2"
-        fill="var(--action)"
-        opacity={coding ? 0.95 : 0.55}
-      />
-      <rect x="16" y="14" width="14" height="1.2" fill="currentColor" opacity="0.45" />
-      <rect x="16" y="17" width="7" height="1.2" fill="currentColor" opacity="0.35" />
-      {coding && <rect x="24" y="17" width="0.9" height="1.4" fill="var(--action)" />}
-      <rect x="18" y="26" width="18" height="2" fill="currentColor" opacity="0.7" />
-      <rect x="8" y="25" width="4" height="3" rx="0.6" fill="currentColor" opacity="0.85" />
-      <rect x="54" y="22" width="16" height="3" rx="0.5" fill="currentColor" />
-      <rect x="67" y="10" width="3" height="15" fill="currentColor" />
-      <rect x="56" y="25" width="2" height="17" fill="currentColor" />
-      <rect x="66" y="25" width="2" height="17" fill="currentColor" />
-    </svg>
-  );
-}
-
-function MusicStudio({ playing }: { playing: boolean }) {
-  return (
-    <svg
-      width={STUDIO_W}
-      height={FURN_H}
-      viewBox="0 0 68 48"
-      aria-hidden
-      className="overflow-visible"
-    >
-      <rect x="22" y="30" width="26" height="6" rx="1" fill="currentColor" />
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-        <rect
-          key={i}
-          x={24 + i * 2.8}
-          y="31.4"
-          width="2"
-          height="3.4"
-          fill="var(--paper)"
-          opacity={playing && i % 2 === 0 ? 0.4 : 1}
-        />
-      ))}
-      <rect x="8" y="18" width="10" height="16" rx="1" fill="currentColor" />
-      <rect x="10" y="20" width="6" height="6" fill="var(--paper)" />
-      <rect x="52" y="18" width="10" height="16" rx="1" fill="currentColor" />
-      <rect x="54" y="20" width="6" height="6" fill="var(--paper)" />
-      {playing && (
-        <>
-          <rect x="32" y="10" width="1.4" height={8} fill="var(--action)" opacity="0.7" />
-          <rect x="36" y="6" width="1.4" height={12} fill="var(--action)" opacity="0.85" />
-          <rect x="40" y="12" width="1.4" height={6} fill="var(--action)" opacity="0.6" />
-        </>
-      )}
-      <path d="M16 12 Q22 8 26 14" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <rect x="24" y="12" width="6" height="4" rx="1" fill="currentColor" />
-      <rect x="2" y="24" width="12" height="3" rx="0.5" fill="currentColor" />
-      <rect x="3" y="27" width="2" height="15" fill="currentColor" />
-      <rect x="11" y="27" width="2" height="15" fill="currentColor" />
-    </svg>
+      className="pixel-prop pointer-events-none"
+      style={{
+        width,
+        height,
+        backgroundImage: `url(${src})`,
+        backgroundRepeat: "no-repeat",
+        backgroundSize: `${width * frames}px ${height}px`,
+        backgroundPosition: `${-frame * width}px 0px`,
+        imageRendering: "pixelated",
+      }}
+    />
   );
 }
 
@@ -754,6 +702,7 @@ function SignatureRow({
 function initialScene(light: boolean): Scene {
   return {
     w: 720,
+    scale: 1,
     ballX: 320,
     ballY: GROUND + BALL_R,
     ballVx: 0,
@@ -847,11 +796,14 @@ export function SoccerPlayground({
     mq.addEventListener("change", onMq);
 
     const measure = () => {
-      const w = el.clientWidth || 720;
+      const clientW = el.clientWidth || 720;
+      sceneScale = clientScale(clientW);
+      const w = sceneScale < 1 ? BASE_W : clientW;
       readLayout(el);
       const s = scene.current;
       if (s) {
         s.w = w;
+        s.scale = sceneScale;
         if (drag.current == null && s.targetX == null) {
           if (s.activity === "desk") s.mascotX = sitDeskX();
           else if (s.activity === "studio") s.mascotX = sitStudioX(w);
@@ -859,6 +811,7 @@ export function SoccerPlayground({
       } else {
         const next = initialScene(light);
         next.w = w;
+        next.scale = sceneScale;
         next.ballX = ballResetX(w);
         next.mascotX = sitDeskX();
         if (reducedMotion) next.letters = stillLetters();
@@ -961,17 +914,18 @@ export function SoccerPlayground({
     if (!s || !kind) return;
     const rect = root.current?.getBoundingClientRect();
     if (!rect) return;
-    const x = e.clientX - rect.left;
-    const y = rect.height - (e.clientY - rect.top);
+    const sc = s.scale || 1;
+    const x = (e.clientX - rect.left) / sc;
+    const y = (rect.height - (e.clientY - rect.top)) / sc;
     const now = performance.now();
     const dt = Math.max(8, now - last.current.t);
     if (Math.hypot(e.clientX - last.current.x, e.clientY - last.current.y) > 5) tap.current = false;
     if (kind === "ball") {
-      const prevY = rect.height - (last.current.y - rect.top);
-      s.ballVx = ((x - (last.current.x - rect.left)) / dt) * 16;
+      const prevY = (rect.height - (last.current.y - rect.top)) / sc;
+      s.ballVx = ((x - (last.current.x - rect.left) / sc) / dt) * 16;
       s.ballVy = ((y - prevY) / dt) * 16;
       s.ballX = clamp(x, sceneLeft() + BALL_R, ballMaxX(s.w));
-      s.ballY = clamp(y, GROUND + BALL_R, 200);
+      s.ballY = clamp(y, GROUND + BALL_R, GROUND + GOAL_H + 20);
     } else {
       const prevX = s.mascotX;
       s.mascotX = clamp(x - MASCOT_W / 2, sceneLeft(), sceneRight(s.w) - MASCOT_W);
@@ -1032,7 +986,7 @@ export function SoccerPlayground({
     const s = scene.current;
     const rect = root.current?.getBoundingClientRect();
     if (!s || !rect) return;
-    sendTo(s, e.clientX - rect.left - MASCOT_W / 2, "idle");
+    sendTo(s, (e.clientX - rect.left) / s.scale - MASCOT_W / 2, "idle");
   };
 
   const s = frame;
@@ -1052,293 +1006,326 @@ export function SoccerPlayground({
             ? "he's setting type."
             : "he's around.";
 
+  const sc = s.scale || 1;
+
   return (
     <>
       <div className="relative mt-4 w-full overflow-x-clip">
         <div
           ref={root}
-          className="relative h-72 w-full select-none touch-none"
-          aria-label="Playground. He stays at a station until you grab him or click a spot. Tap the signature to straighten the letters."
-          onPointerDown={onGroundPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          className="relative w-full overflow-hidden"
+          style={{ height: SCENE_H * sc }}
         >
           <div
-            className="bg-line absolute h-px"
+            className="relative select-none touch-none"
             style={{
-              left: sceneLeft(),
-              width: Math.max(120, sceneRight(s.w) - sceneLeft()),
-              bottom: GROUND,
+              width: s.w,
+              height: SCENE_H,
+              transform: `scale(${sc})`,
+              transformOrigin: "top left",
             }}
-          />
-
-          <button
-            type="button"
-            className="text-ink absolute cursor-crosshair"
-            style={{ left: lampX(), bottom: GROUND, width: LAMP_W, height: 52 }}
-            aria-label={light ? "Turn lamp on, dark mode" : "Turn lamp off, light mode"}
-            onClick={() => {
-              if (!scene.current) return;
-              const nextOn = !scene.current.lampOn;
-              scene.current.lampOn = nextOn;
-              scene.current.facing = -1;
-              scene.current.speech = nextOn ? "dark." : "light.";
-              scene.current.speechT = 80;
-              onTheme(!nextOn);
-              playTone(muted, nextOn ? 880 : 420, 0.06, "sine", 0.035);
-            }}
-            onPointerEnter={() => {
-              if (scene.current) scene.current.hint = "lamp";
-            }}
-            onPointerLeave={() => {
-              if (scene.current) scene.current.hint = null;
-            }}
+            aria-label="Playground. He stays at a station until you grab him or click a spot. Tap the signature to straighten the letters."
+            onPointerDown={onGroundPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
           >
-            <Lamp on={s.lampOn} />
-          </button>
-          {s.lampOn && (
             <div
               aria-hidden
-              className="pointer-events-none absolute rounded-full"
+              className="pointer-events-none absolute"
               style={{
-                left: lampX() - 10,
-                bottom: GROUND + 8,
-                width: 48,
-                height: 48,
-                background: "radial-gradient(circle, oklch(0.85 0.12 85 / 0.38), transparent 70%)",
+                left: sceneLeft() - 6,
+                width: Math.max(140, sceneRight(s.w) - sceneLeft() + 12),
+                bottom: GROUND - 4,
+                height: 6,
               }}
-            />
-          )}
+            >
+              <div className="bg-ink/25 h-px w-full" />
+              <div className="bg-ink/12 h-px w-full" />
+              <div className="bg-ink/[0.07] h-[3px] w-full" />
+            </div>
 
-          <button
-            type="button"
-            className="text-ink absolute cursor-crosshair"
-            style={{ left: dx, bottom: GROUND, width: DESK_W, height: FURN_H }}
-            aria-label="Coding desk"
-            onClick={() => {
-              if (!scene.current) return;
-              sendTo(scene.current, sitDeskX(), "desk");
-              playTone(muted, 1400, 0.03, "square", 0.025);
-            }}
-            onPointerEnter={() => {
-              if (scene.current) scene.current.hint = "desk";
-            }}
-            onPointerLeave={() => {
-              if (scene.current) scene.current.hint = null;
-            }}
-          >
-            <CodingDesk coding={s.activity === "desk" || s.coding > 0} />
-          </button>
+            <button
+              type="button"
+              className="absolute cursor-crosshair"
+              style={{ left: lampX(), bottom: GROUND, width: LAMP_W, height: LAMP_H }}
+              aria-label={light ? "Turn lamp on, dark mode" : "Turn lamp off, light mode"}
+              onClick={() => {
+                if (!scene.current) return;
+                const nextOn = !scene.current.lampOn;
+                scene.current.lampOn = nextOn;
+                scene.current.facing = -1;
+                scene.current.speech = nextOn ? "dark." : "light.";
+                scene.current.speechT = 80;
+                onTheme(!nextOn);
+                playTone(muted, nextOn ? 880 : 420, 0.06, "sine", 0.035);
+              }}
+              onPointerEnter={() => {
+                if (scene.current) scene.current.hint = "lamp";
+              }}
+              onPointerLeave={() => {
+                if (scene.current) scene.current.hint = null;
+              }}
+            >
+              <PixelProp
+                src={PROP_LAMP}
+                width={LAMP_W}
+                height={LAMP_H}
+                frames={2}
+                frame={s.lampOn ? 1 : 0}
+              />
+            </button>
+            {s.lampOn && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute rounded-full"
+                style={{
+                  left: lampX() - 14,
+                  bottom: GROUND + LAMP_H - 36,
+                  width: 54,
+                  height: 54,
+                  background:
+                    "radial-gradient(circle, oklch(0.85 0.12 85 / 0.34), transparent 70%)",
+                }}
+              />
+            )}
 
-          <span className="sr-only">{SIGNATURE}</span>
-          {inSceneLetters && (
-            <SignatureRow
-              letters={s.letters}
-              onActivate={replayLetters}
-              onHover={hoverLetters}
-              letterWidth={LETTER_W}
-              className="text-muted-ink absolute z-[5] cursor-pointer font-mono text-[11px] whitespace-pre"
-              style={{ left: letterStart(s.w), bottom: GROUND }}
-            />
-          )}
+            <button
+              type="button"
+              className="absolute cursor-crosshair"
+              style={{ left: dx, bottom: GROUND, width: DESK_W, height: DESK_H }}
+              aria-label="Coding desk"
+              onClick={() => {
+                if (!scene.current) return;
+                sendTo(scene.current, sitDeskX(), "desk");
+                playTone(muted, 1400, 0.03, "square", 0.025);
+              }}
+              onPointerEnter={() => {
+                if (scene.current) scene.current.hint = "desk";
+              }}
+              onPointerLeave={() => {
+                if (scene.current) scene.current.hint = null;
+              }}
+            >
+              <PixelProp
+                src={PROP_DESK}
+                width={DESK_W}
+                height={DESK_H}
+                frames={2}
+                frame={s.activity === "desk" || s.coding > 0 ? 1 : 0}
+              />
+            </button>
 
-          <div
-            className="text-ink absolute z-10 flex touch-none items-end justify-center"
-            style={{
-              left: s.mascotX - (SPRITE_W - MASCOT_W) / 2,
-              bottom: GROUND + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
-              width: SPRITE_W,
-              height: MASCOT_H + 10,
-              cursor: s.lift > 0 ? "grabbing" : "grab",
-            }}
-            onPointerDown={onPointerDown("mascot")}
-            onPointerEnter={() => {
-              if (scene.current) scene.current.hoverMascot = true;
-            }}
-            onPointerLeave={() => {
-              if (scene.current) scene.current.hoverMascot = false;
-            }}
-          >
-            {(s.hoverMascot || s.lift > 0) && (
+            <span className="sr-only">{SIGNATURE}</span>
+            {inSceneLetters && (
+              <SignatureRow
+                letters={s.letters}
+                onActivate={replayLetters}
+                onHover={hoverLetters}
+                letterWidth={LETTER_W}
+                className="text-muted-ink absolute z-[5] cursor-pointer font-mono text-[11px] whitespace-pre"
+                style={{ left: letterStart(s.w), bottom: GROUND }}
+              />
+            )}
+
+            <div
+              className="text-ink absolute z-10 flex touch-none items-end justify-center"
+              style={{
+                left: s.mascotX - (SPRITE_W - MASCOT_W) / 2,
+                bottom: GROUND + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
+                width: SPRITE_W,
+                height: MASCOT_H + 10,
+                cursor: s.lift > 0 ? "grabbing" : "grab",
+              }}
+              onPointerDown={onPointerDown("mascot")}
+              onPointerEnter={() => {
+                if (scene.current) scene.current.hoverMascot = true;
+              }}
+              onPointerLeave={() => {
+                if (scene.current) scene.current.hoverMascot = false;
+              }}
+            >
+              {(s.hoverMascot || s.lift > 0) && (
+                <span
+                  aria-hidden
+                  className="border-ink/50 pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed"
+                />
+              )}
               <span
                 aria-hidden
-                className="border-ink/50 pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed"
+                className="bg-ink/20 pointer-events-none absolute bottom-1 left-1/2 h-1.5 w-8 -translate-x-1/2 rounded-full"
               />
-            )}
-            <PixelMascot
-              kicking={s.kicking}
-              heading={s.heading}
-              facing={s.facing}
-              sit={sit && s.lift === 0}
-              bending={
-                (s.activity === "fix" || s.pending === "fix") &&
-                s.fixPass === "sweep" &&
-                s.fixHold > 0
-              }
-              hop={s.hop}
-              walkPhase={s.walkPhase}
-              speed={Math.abs(s.walkVel)}
-              idlePhase={s.idlePhase}
-              turnT={s.turnT}
-              bob={s.bob}
-              reduced={reduced}
-            />
-            {s.speech && (
-              <span
-                className="border-line bg-surface text-ink pointer-events-none absolute left-1/2 z-10 rounded-md border px-2 py-1 font-mono text-[10px] whitespace-nowrap lowercase"
-                style={{ bottom: MASCOT_H + 14, transform: "translateX(-50%)" }}
-              >
-                {s.speech}
-              </span>
-            )}
-          </div>
-
-          <div
-            className="text-ink absolute z-20 touch-none"
-            style={{
-              left: s.ballX - BALL_R - 5,
-              bottom: s.ballY - BALL_R,
-              width: BALL_R * 2 + 10,
-              height: BALL_R * 2 + 10,
-              cursor: "grab",
-            }}
-            onPointerDown={onPointerDown("ball")}
-            onPointerEnter={() => {
-              if (scene.current) scene.current.hint = "ball";
-            }}
-            onPointerLeave={() => {
-              if (scene.current && !drag.current) scene.current.hint = null;
-            }}
-          >
-            <div className="pointer-events-none flex h-full items-end justify-center">
-              <SoccerBall />
+              <PixelMascot
+                kicking={s.kicking}
+                heading={s.heading}
+                facing={s.facing}
+                sit={sit && s.lift === 0}
+                bending={
+                  (s.activity === "fix" || s.pending === "fix") &&
+                  s.fixPass === "sweep" &&
+                  s.fixHold > 0
+                }
+                hop={s.hop}
+                walkPhase={s.walkPhase}
+                speed={Math.abs(s.walkVel)}
+                idlePhase={s.idlePhase}
+                turnT={s.turnT}
+                bob={s.bob}
+                reduced={reduced}
+              />
+              {s.speech && (
+                <span
+                  className="border-line bg-surface text-ink pointer-events-none absolute left-1/2 z-10 rounded-md border px-2 py-1 font-mono text-[10px] whitespace-nowrap lowercase"
+                  style={{ bottom: MASCOT_H + 14, transform: "translateX(-50%)" }}
+                >
+                  {s.speech}
+                </span>
+              )}
             </div>
+
+            <div
+              className="text-ink absolute z-20 touch-none"
+              style={{
+                left: s.ballX - BALL_R - 5,
+                bottom: s.ballY - BALL_R,
+                width: BALL_R * 2 + 10,
+                height: BALL_R * 2 + 10,
+                cursor: "grab",
+              }}
+              onPointerDown={onPointerDown("ball")}
+              onPointerEnter={() => {
+                if (scene.current) scene.current.hint = "ball";
+              }}
+              onPointerLeave={() => {
+                if (scene.current && !drag.current) scene.current.hint = null;
+              }}
+            >
+              <div className="pointer-events-none flex h-full items-end justify-center">
+                <PixelProp src={PROP_BALL} width={BALL_R * 2} height={BALL_R * 2} />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="text-ink absolute z-0 cursor-crosshair"
+              style={{ left: gx, bottom: GROUND, width: GOAL_W, height: GOAL_H }}
+              aria-label="Walk to the goal"
+              onClick={() => {
+                const sc = scene.current;
+                if (!sc) return;
+                sendTo(sc, Math.min(sc.ballX - MASCOT_W / 2, gx - MASCOT_W - 4), "soccer");
+                if (nearBall(sc, 24)) kickBall(sc, true);
+              }}
+              onPointerEnter={() => {
+                if (scene.current) scene.current.hint = "soccer";
+              }}
+              onPointerLeave={() => {
+                if (scene.current && !drag.current) scene.current.hint = null;
+              }}
+            >
+              <PixelProp src={PROP_GOAL} width={GOAL_W} height={GOAL_H} />
+              {s.score > 0 && (
+                <span
+                  className="text-ink absolute left-1/2 -translate-x-1/2 font-mono text-[11px] tabular-nums"
+                  style={{ top: -14 }}
+                >
+                  {s.score}
+                </span>
+              )}
+              {s.skills > 0 && (
+                <span
+                  className="text-muted-ink pointer-events-none absolute left-1/2 -translate-x-1/2 font-mono text-[9px] tabular-nums"
+                  style={{ top: -26 }}
+                >
+                  {s.skills} skill{s.skills === 1 ? "" : "s"}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="text-ink absolute cursor-crosshair"
+              style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: STUDIO_H }}
+              aria-label="Music studio"
+              onClick={() => {
+                if (!scene.current) return;
+                sendTo(scene.current, sitStudioX(scene.current.w), "studio");
+              }}
+              onPointerEnter={() => {
+                if (scene.current) scene.current.hint = "studio";
+              }}
+              onPointerLeave={() => {
+                if (scene.current) scene.current.hint = null;
+              }}
+            >
+              <PixelProp
+                src={PROP_STUDIO}
+                width={STUDIO_W}
+                height={STUDIO_H}
+                frames={2}
+                frame={s.activity === "studio" || s.playing > 0 ? 1 : 0}
+              />
+            </button>
+
+            {ready && (
+              <>
+                <HintChip
+                  text="grab."
+                  x={s.mascotX + MASCOT_W / 2}
+                  y={GROUND + MASCOT_H + 10}
+                  show={s.hoverMascot && s.lift === 0 && !s.speech}
+                />
+                <HintChip
+                  text="light."
+                  x={lampX() + LAMP_W / 2}
+                  y={GROUND + LAMP_H + 8}
+                  show={s.hint === "lamp"}
+                />
+                <HintChip
+                  text="the work."
+                  x={dx + DESK_W / 2}
+                  y={GROUND + DESK_H + 8}
+                  show={s.hint === "desk" && s.lift === 0}
+                />
+                <HintChip
+                  text="drop to code."
+                  x={dx + DESK_W / 2}
+                  y={GROUND + DESK_H + 8}
+                  show={s.hint === "desk" && s.lift > 0}
+                />
+                <HintChip
+                  text="the pitch."
+                  x={gx + GOAL_W / 2}
+                  y={GROUND + GOAL_H + 8}
+                  show={s.hint === "soccer" && s.lift === 0}
+                />
+                <HintChip
+                  text="drop to play."
+                  x={gx + GOAL_W / 2}
+                  y={GROUND + GOAL_H + 8}
+                  show={s.hint === "soccer" && s.lift > 0}
+                />
+                <HintChip
+                  text="flick the ball."
+                  x={s.ballX}
+                  y={s.ballY + 14}
+                  show={s.hint === "ball"}
+                />
+                <HintChip
+                  text="after hours."
+                  x={sx + STUDIO_W / 2}
+                  y={GROUND + STUDIO_H + 8}
+                  show={s.hint === "studio" && s.lift === 0}
+                />
+                <HintChip
+                  text="drop to make music."
+                  x={sx + STUDIO_W / 2}
+                  y={GROUND + STUDIO_H + 8}
+                  show={s.hint === "studio" && s.lift > 0}
+                />
+              </>
+            )}
           </div>
-
-          <button
-            type="button"
-            className="text-ink absolute z-0 cursor-crosshair"
-            style={{ left: gx, bottom: GROUND, width: GOAL_W, height: GOAL_H }}
-            aria-label="Walk to the goal"
-            onClick={() => {
-              const sc = scene.current;
-              if (!sc) return;
-              sendTo(sc, Math.min(sc.ballX - MASCOT_W / 2, gx - MASCOT_W - 4), "soccer");
-              if (nearBall(sc, 24)) kickBall(sc, true);
-            }}
-            onPointerEnter={() => {
-              if (scene.current) scene.current.hint = "soccer";
-            }}
-            onPointerLeave={() => {
-              if (scene.current && !drag.current) scene.current.hint = null;
-            }}
-          >
-            <svg width={GOAL_W} height={GOAL_H} viewBox="0 0 36 48" className="overflow-visible">
-              <path d="M2 48 V6 H34 V48" fill="none" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M2 6 H34" stroke="currentColor" strokeWidth="1.7" />
-              <path
-                d="M7 8 V46 M13 8 V46 M19 8 V46 M25 8 V46 M31 8 V46 M2 18 H34 M2 28 H34 M2 38 H34"
-                stroke="currentColor"
-                strokeWidth="0.45"
-                opacity="0.32"
-              />
-            </svg>
-            {s.score > 0 && (
-              <span
-                className="text-ink absolute left-1/2 -translate-x-1/2 font-mono text-[11px] tabular-nums"
-                style={{ top: -14 }}
-              >
-                {s.score}
-              </span>
-            )}
-            {s.skills > 0 && (
-              <span
-                className="text-muted-ink pointer-events-none absolute left-1/2 -translate-x-1/2 font-mono text-[9px] tabular-nums"
-                style={{ top: -26 }}
-              >
-                {s.skills} skill{s.skills === 1 ? "" : "s"}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className="text-ink absolute cursor-crosshair"
-            style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: FURN_H }}
-            aria-label="Music studio"
-            onClick={() => {
-              if (!scene.current) return;
-              sendTo(scene.current, sitStudioX(scene.current.w), "studio");
-            }}
-            onPointerEnter={() => {
-              if (scene.current) scene.current.hint = "studio";
-            }}
-            onPointerLeave={() => {
-              if (scene.current) scene.current.hint = null;
-            }}
-          >
-            <MusicStudio playing={s.activity === "studio" || s.playing > 0} />
-          </button>
-
-          {ready && (
-            <>
-              <HintChip
-                text="grab."
-                x={s.mascotX + MASCOT_W / 2}
-                y={GROUND + MASCOT_H + 10}
-                show={s.hoverMascot && s.lift === 0 && !s.speech}
-              />
-              <HintChip
-                text="light."
-                x={lampX() + LAMP_W / 2}
-                y={GROUND + 56}
-                show={s.hint === "lamp"}
-              />
-              <HintChip
-                text="the work."
-                x={dx + DESK_W / 2}
-                y={GROUND + FURN_H + 8}
-                show={s.hint === "desk" && s.lift === 0}
-              />
-              <HintChip
-                text="drop to code."
-                x={dx + DESK_W / 2}
-                y={GROUND + FURN_H + 8}
-                show={s.hint === "desk" && s.lift > 0}
-              />
-              <HintChip
-                text="the pitch."
-                x={gx + GOAL_W / 2}
-                y={GROUND + GOAL_H + 8}
-                show={s.hint === "soccer" && s.lift === 0}
-              />
-              <HintChip
-                text="drop to play."
-                x={gx + GOAL_W / 2}
-                y={GROUND + GOAL_H + 8}
-                show={s.hint === "soccer" && s.lift > 0}
-              />
-              <HintChip
-                text="flick the ball."
-                x={s.ballX}
-                y={s.ballY + 14}
-                show={s.hint === "ball"}
-              />
-              <HintChip
-                text="after hours."
-                x={sx + STUDIO_W / 2}
-                y={GROUND + FURN_H + 8}
-                show={s.hint === "studio" && s.lift === 0}
-              />
-              <HintChip
-                text="drop to make music."
-                x={sx + STUDIO_W / 2}
-                y={GROUND + FURN_H + 8}
-                show={s.hint === "studio" && s.lift > 0}
-              />
-            </>
-          )}
         </div>
       </div>
       {(captionClock || !inSceneLetters) && (
@@ -1449,7 +1436,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     const left = pitchLeft();
     const right = pitchRight(s.w);
     const behind = Math.sign(gx - s.ballX) || 1;
-    const high = s.ballY > GROUND + 20;
+    const high = s.ballY > GROUND + 36;
     const want = clamp(s.ballX - MASCOT_W / 2 - (high ? 0 : 10) * behind, left, right);
     if (Math.abs(want - s.mascotX) > 1.1) moveToward(s, want, 1.55);
     else s.walkVel *= 0.8;
@@ -1500,8 +1487,8 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       s.ballX = maxX;
       if (s.ballVx > 0) s.ballVx *= -0.4;
     }
-    if (s.ballY > 200) {
-      s.ballY = 200;
+    if (s.ballY > GROUND + GOAL_H + 20) {
+      s.ballY = GROUND + GOAL_H + 20;
       s.ballVy *= -0.4;
     }
   }
@@ -1516,7 +1503,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       const hitBall =
         lettersInScene(s.w) &&
         Math.abs(s.ballX - lx) < 8 &&
-        s.ballY < GROUND + 18 &&
+        s.ballY < GROUND + BALL_R + 8 &&
         Math.abs(s.ballVx) > 0.7;
       const hitMascot = lettersInScene(s.w) && Math.abs(mx - lx) < 9 && Math.abs(s.walkVel) > 0.45;
       if (hitBall || hitMascot) {
