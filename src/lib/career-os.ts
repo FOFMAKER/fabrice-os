@@ -1,5 +1,12 @@
 /* Career OS content model — add new stories, writing, and chapters here. */
 
+export const CONTENT_MAX_PX = 720;
+export const GITHUB_PROFILE = "https://github.com/FOFMAKER";
+export const PARKR_APP_STORE = "https://apps.apple.com/us/app/park-r/id6795870269";
+
+/** Public path to the résumé PDF. Keep null until `public/resume.pdf` exists. */
+export const RESUME_HREF: string | null = null;
+
 export type StoryDetail = {
   problem: string;
   hypothesis: string;
@@ -18,13 +25,20 @@ export type Story = {
 };
 
 export const PARKR = {
-  href: "https://github.com/ffidel/parktracker",
+  href: PARKR_APP_STORE,
+  name: "Park'r",
   line: "Turn a parking garage into a live product.",
   problem:
     "Occupancy is usually a guess. Drivers circle. Operators don’t see the lot until someone complains.",
+  shipped:
+    "The iOS app is live on the App Store: scan a floor QR, tap I just parked, remember the floor, tap I am leaving. The live count updates for everyone.",
+  next: "The next layer is parking intelligence: read a city block the way a driver actually reads it. If occupancy is expressed as a confidence signal instead of a number, people will trust it enough to change route.",
   loop: [
     ["Scan", "QR on the floor. Web works with no install. The iOS app opens the same code."],
-    ["I just parked", "The live count updates for everyone. When the lot is full, the surface says so."],
+    [
+      "I just parked",
+      "The live count updates for everyone. When the lot is full, the surface says so.",
+    ],
     ["Remember the floor", "Floor, spot, optional note — so the car is findable on the way back."],
     ["I am leaving", "Count drops. The space is free for the next driver."],
   ] as [string, string][],
@@ -36,29 +50,12 @@ export const PARKR = {
 
 export const STORIES: Story[] = [
   {
-    id: "parkpulse",
-    name: "ParkPulse",
-    summary: "Parking intelligence concept: read a city block the way a driver actually reads it.",
-    tags: ["Product Design", "Research", "Urban Mobility"],
-    status: "case study in progress",
-    detail: {
-      problem:
-        "Drivers circle because occupancy data is either missing or too abstract to act on in the last two minutes of a trip.",
-      hypothesis:
-        "If occupancy is expressed as a confidence signal instead of a number, people will trust it enough to change route.",
-      owned:
-        "Framing, research plan, information model for occupancy states, and the interaction language for live confidence.",
-      stage: "Concept and research synthesis. No shipped surface yet.",
-      behind:
-        "Behind the product: notes on how much uncertainty a live signal can admit before people stop believing it.",
-    },
-  },
-  {
-    id: "styleforge",
-    name: "StyleForge",
-    summary: "AI wardrobe platform: turn what someone already owns into decisions they can make fast.",
+    id: "thats-my-fit",
+    name: "That's My Fit",
+    summary:
+      "AI wardrobe platform: turn what someone already owns into decisions they can make fast.",
     tags: ["AI Product", "Personalization", "UX"],
-    status: "case study in progress",
+    status: "in beta",
     detail: {
       problem:
         "Wardrobe tools ask people to catalogue everything before returning any value, so the work never finishes.",
@@ -66,7 +63,7 @@ export const STORIES: Story[] = [
         "Value first, catalogue later: if the first suggestion is useful with five items, people keep adding.",
       owned:
         "Product framing, onboarding model, personalization boundaries, and how AI output is explained to the person.",
-      stage: "Prototype thinking and interaction studies. Case study being written.",
+      stage: "In beta. Case study being written.",
       behind:
         "Behind the product: where personalization stops being helpful and starts feeling like surveillance.",
     },
@@ -122,13 +119,13 @@ export const BOOK: Chapter[] = [
   },
   {
     id: "parkpulse",
-    title: "ParkPulse",
+    title: "Park'r",
     done: false,
     body: ["Draft chapter. Research synthesis and the occupancy confidence model go here."],
   },
   {
     id: "styleforge",
-    title: "StyleForge",
+    title: "That's My Fit",
     done: false,
     body: ["Draft chapter. Onboarding-without-cataloguing and personalization limits go here."],
   },
