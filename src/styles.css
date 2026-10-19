@@ -3,6 +3,8 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant coarse (@media (pointer: coarse));
+@custom-variant fine (@media (pointer: fine));
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -147,20 +149,42 @@
   --paper: oklch(0.17 0.006 60);
   --surface: oklch(0.22 0.008 65);
   --ink: oklch(0.93 0.008 80);
-  --muted-ink: oklch(0.66 0.012 80);
+  --muted-ink: oklch(0.78 0.012 80);
   --line: oklch(0.28 0.008 70);
   --action: oklch(0.72 0.13 258);
   --positive: oklch(0.82 0.18 148);
+  --hero-shirt: oklch(0.78 0.1 88);
+  --hero-plaid: oklch(0.62 0.09 75);
+  --hero-kerchief: oklch(0.58 0.16 28);
+  --hero-denim: oklch(0.52 0.07 258);
+  --hero-skin: #c68b59;
+  --hero-shade: #a86f42;
+  --hero-shoe: oklch(0.9 0.01 90);
+  --hero-stripe: oklch(0.28 0.02 250);
+  --hero-glove: oklch(0.92 0.01 90);
+  --hero-hair: #3d2a22;
+  --hero-button: oklch(0.82 0.12 88);
 }
 
 :root.light {
   --paper: oklch(0.96 0.012 85);
   --surface: oklch(0.93 0.014 85);
   --ink: oklch(0.24 0.01 70);
-  --muted-ink: oklch(0.52 0.012 75);
+  --muted-ink: oklch(0.42 0.014 75);
   --line: oklch(0.86 0.014 82);
   --action: oklch(0.52 0.15 258);
   --positive: oklch(0.55 0.14 148);
+  --hero-shirt: oklch(0.74 0.11 88);
+  --hero-plaid: oklch(0.58 0.1 72);
+  --hero-kerchief: oklch(0.52 0.17 28);
+  --hero-denim: oklch(0.4 0.08 258);
+  --hero-skin: #c68b59;
+  --hero-shade: #a86f42;
+  --hero-shoe: oklch(0.99 0.004 95);
+  --hero-stripe: oklch(0.26 0.03 250);
+  --hero-glove: oklch(0.97 0.008 90);
+  --hero-hair: #1e1410;
+  --hero-button: oklch(0.78 0.13 88);
 }
 
 @layer base {
@@ -172,6 +196,8 @@
     background-color: var(--paper);
     color: var(--ink);
     font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.011em;
     padding-left: env(safe-area-inset-left);
@@ -204,7 +230,9 @@
   text-decoration: none;
   border-bottom: 1px solid color-mix(in oklab, var(--ink) 45%, transparent);
   padding-bottom: 1px;
-  transition: border-color 200ms ease, color 200ms ease;
+  transition:
+    border-color 200ms ease,
+    color 200ms ease;
   &:hover {
     border-bottom-color: var(--ink);
   }
@@ -232,7 +260,10 @@
 @utility icon-btn {
   cursor: crosshair;
   color: var(--muted-ink);
-  transition: color 150ms ease, transform 120ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    transform 120ms ease,
+    background-color 150ms ease;
   &:hover {
     color: var(--ink);
   }
@@ -249,7 +280,9 @@
   border-radius: 6px;
   border: 1px solid var(--line);
   color: var(--muted-ink);
-  transition: color 150ms ease, border-color 150ms ease;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
   &:hover {
     color: var(--ink);
     border-color: color-mix(in oklab, var(--ink) 35%, transparent);
@@ -258,6 +291,15 @@
 
 @utility dotted-rule {
   border-top: 1px dashed var(--line);
+}
+
+.pixel-prop {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+:root:not(.light) .pixel-prop {
+  filter: brightness(1.14) saturate(0.9);
 }
 
 @keyframes letter-up {
