@@ -7,6 +7,7 @@ Each material uses 2–3 shade levels. Contact shadows are baked in.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -49,10 +50,13 @@ GOAL = (214, 204, 186, 255)
 GOAL_LO = (164, 152, 132, 255)
 GOAL_DK = (92, 84, 72, 255)
 
-BALL_W = (244, 238, 226, 255)
-BALL_G = (210, 204, 192, 255)
-BALL_K = (38, 36, 34, 255)
-BALL_M = (86, 80, 74, 255)
+BALL_W = (248, 244, 236, 255)
+BALL_W2 = (226, 220, 208, 255)
+BALL_W3 = (186, 178, 164, 255)
+BALL_K = (28, 26, 24, 255)
+BALL_K2 = (48, 44, 40, 255)
+BALL_SEAM = (22, 20, 18, 255)
+BALL_HI = (255, 252, 246, 255)
 
 SHADE = (42, 34, 26, 40)
 SHADE2 = (42, 34, 26, 72)
@@ -189,94 +193,114 @@ def monitor(c: C, x: int, y: int, coding: bool) -> None:
 
 
 def desk(coding: bool) -> Image.Image:
-    c = C(156, 84)
-    c.shadow(58, 81, 48, 2)
-    c.shadow(128, 81, 16, 2)
-    # legs
-    for x in (10, 96):
+    """Monitor + keyboard desk. Chair is a separate prop so the mascot can sit on it."""
+    c = C(120, 84)
+    c.shadow(52, 81, 42, 2)
+    for x in (10, 84):
         c.fill(x, 46, 5, 35, WOOD_LO)
         c.vline(x, 46, 35, WOOD)
         c.vline(x + 4, 46, 35, WOOD_DK)
         c.fill(x - 1, 78, 7, 3, WOOD_DK)
-    # top
-    c.fill(6, 42, 108, 6, WOOD)
-    c.hline(6, 42, 108, WOOD_HI)
-    c.hline(6, 47, 108, WOOD_LO)
-    c.fill(7, 43, 106, 3, WOOD)
-    # front apron
-    c.fill(8, 48, 104, 4, WOOD_LO)
-    # keyboard
+    c.fill(6, 42, 96, 6, WOOD)
+    c.hline(6, 42, 96, WOOD_HI)
+    c.hline(6, 47, 96, WOOD_LO)
+    c.fill(7, 43, 94, 3, WOOD)
+    c.fill(8, 48, 92, 4, WOOD_LO)
     c.fill(28, 40, 36, 4, INK)
     c.hline(29, 41, 34, CREAM)
     for i in range(8):
-        c.put(31 + i * 4, 41, CREAM_HI if i % 2 == 0 else CREAM_LO)
-    # mug
+        key = CREAM_HI if not (coding and i % 2 == 0) else CREAM
+        c.put(31 + i * 4, 41, key)
+        c.put(32 + i * 4, 41, key)
     c.fill(72, 36, 6, 7, CREAM_LO)
     c.fill(73, 37, 4, 5, CREAM)
     c.hline(73, 37, 4, CREAM_HI)
     c.put(78, 38, WOOD_LO)
     c.put(79, 39, WOOD_LO)
-    # monitor
-    monitor(c, 22, 8, coding)
-    # chair
-    cx = 118
-    c.fill(cx + 4, 58, 4, 23, WOOD_LO)
-    c.fill(cx + 18, 58, 4, 23, WOOD_LO)
-    c.vline(cx + 4, 58, 23, WOOD)
-    c.vline(cx + 21, 58, 23, WOOD_DK)
-    c.fill(cx + 2, 54, 24, 6, WOOD)
-    c.hline(cx + 2, 54, 24, WOOD_HI)
-    c.fill(cx + 4, 55, 20, 4, CREAM)
-    c.hline(cx + 4, 55, 20, CREAM_HI)
-    # back — up toward lower chest on a 100px mascot
-    c.fill(cx + 19, 10, 8, 46, WOOD)
-    c.vline(cx + 19, 10, 46, WOOD_HI)
-    c.vline(cx + 26, 10, 46, WOOD_LO)
-    c.fill(cx + 17, 8, 12, 5, WOOD_HI)
-    c.fill(cx + 6, 68, 16, 2, WOOD_LO)
+    monitor(c, 20, 8, coding)
+    return c.image()
+
+
+def chair() -> Image.Image:
+    """Mascot-scaled wood chair: seat ~knee-to-hip, back to mid-torso."""
+    c = C(36, 56)
+    c.shadow(18, 54, 14, 2)
+    # front legs
+    c.fill(6, 30, 4, 24, WOOD_LO)
+    c.vline(6, 30, 24, WOOD)
+    c.vline(9, 30, 24, WOOD_DK)
+    c.fill(26, 30, 4, 24, WOOD_LO)
+    c.vline(26, 30, 24, WOOD)
+    c.vline(29, 30, 24, WOOD_DK)
+    c.fill(5, 51, 6, 3, WOOD_DK)
+    c.fill(25, 51, 6, 3, WOOD_DK)
+    # seat
+    c.fill(4, 26, 28, 6, WOOD)
+    c.hline(4, 26, 28, WOOD_HI)
+    c.hline(4, 31, 28, WOOD_LO)
+    c.fill(6, 27, 24, 4, CREAM)
+    c.hline(6, 27, 24, CREAM_HI)
+    c.fill(7, 28, 22, 2, CREAM_LO)
+    # back legs / posts
+    c.fill(5, 6, 5, 22, WOOD)
+    c.vline(5, 6, 22, WOOD_HI)
+    c.vline(9, 6, 22, WOOD_LO)
+    c.fill(26, 6, 5, 22, WOOD)
+    c.vline(26, 6, 22, WOOD_HI)
+    c.vline(30, 6, 22, WOOD_DK)
+    # back slats
+    c.fill(6, 6, 24, 4, WOOD_HI)
+    c.hline(6, 6, 24, CREAM_LO)
+    for y in (12, 18):
+        c.fill(8, y, 20, 3, WOOD)
+        c.hline(8, y, 20, WOOD_HI)
+        c.hline(8, y + 2, 20, WOOD_LO)
     return c.image()
 
 
 def studio(playing: bool) -> Image.Image:
-    """Speaker, keyboard, headphones — no extra stands."""
-    c = C(108, 72)
-    c.shadow(54, 69, 40, 2)
-    for x in (12, 86):
-        c.fill(x, 42, 5, 26, WOOD_LO)
-        c.vline(x, 42, 26, WOOD)
-        c.vline(x + 4, 42, 26, WOOD_DK)
-        c.fill(x - 1, 65, 7, 3, WOOD_DK)
-    c.fill(8, 38, 92, 6, WOOD)
-    c.hline(8, 38, 92, WOOD_HI)
-    c.hline(8, 43, 92, WOOD_LO)
-    c.fill(10, 44, 88, 3, WOOD_LO)
+    """Open booth: speaker left, keys in the middle, headphones right.
+
+    Low table so a standing mascot in front stays fully readable.
+    """
+    c = C(108, 64)
+    c.shadow(54, 61, 40, 2)
+    for x in (10, 88):
+        c.fill(x, 38, 5, 22, WOOD_LO)
+        c.vline(x, 38, 22, WOOD)
+        c.vline(x + 4, 38, 22, WOOD_DK)
+        c.fill(x - 1, 57, 7, 3, WOOD_DK)
+    c.fill(6, 34, 96, 6, WOOD)
+    c.hline(6, 34, 96, WOOD_HI)
+    c.hline(6, 39, 96, WOOD_LO)
+    c.fill(8, 40, 92, 3, WOOD_LO)
     # speaker
-    c.fill(14, 16, 16, 22, INK)
-    c.fill(15, 17, 14, 20, INK_MID)
-    c.ellipse(22, 28, 4, 4, INK)
-    c.ellipse(22, 28, 2, 2, CREAM_LO)
-    c.fill(18, 19, 8, 2, RED if playing else INK_HI)
-    # keys
-    c.fill(34, 32, 40, 7, INK)
-    c.hline(34, 32, 40, INK_HI)
+    c.fill(12, 12, 16, 22, INK)
+    c.fill(13, 13, 14, 20, INK_MID)
+    c.ellipse(20, 24, 4, 4, INK)
+    c.ellipse(20, 24, 2, 2, CREAM_LO)
+    c.fill(16, 15, 8, 2, RED if playing else INK_HI)
+    # keys / MPC
+    c.fill(32, 28, 42, 7, INK)
+    c.hline(32, 28, 42, INK_HI)
     for i in range(9):
-        x = 36 + i * 4
+        x = 34 + i * 4
         key = CREAM_HI if not (playing and i % 3 == 1) else CREAM_LO
-        c.fill(x, 34, 3, 4, key)
+        c.fill(x, 30, 3, 4, key)
         if i in (1, 3, 6, 8):
-            c.fill(x + 1, 34, 2, 2, INK)
-    # headphones resting on the desk
-    c.fill(80, 20, 6, 10, INK)
-    c.fill(94, 20, 6, 10, INK)
-    c.fill(81, 21, 4, 8, INK_MID)
-    c.fill(95, 21, 4, 8, INK_MID)
-    for i, y in enumerate(range(14, 22)):
+            c.fill(x + 1, 30, 2, 2, INK)
+    # headphones on the right
+    c.fill(80, 16, 6, 10, INK)
+    c.fill(94, 16, 6, 10, INK)
+    c.fill(81, 17, 4, 8, INK_MID)
+    c.fill(95, 17, 4, 8, INK_MID)
+    for i, y in enumerate(range(10, 18)):
         c.put(84 + i // 2, y, INK_HI)
         c.put(95 - i // 2, y, INK_HI)
-    c.hline(86, 20, 8, INK_HI)
+    c.hline(86, 16, 8, INK_HI)
     if playing:
         for i, h in enumerate((5, 9, 4, 8)):
-            c.fill(38 + i * 5, 28 - h, 3, h, CODE_A if i % 2 == 0 else CODE_B)
+            c.fill(36 + i * 5, 24 - h, 3, h, CODE_A if i % 2 == 0 else CODE_B)
     return c.image()
 
 
@@ -310,41 +334,154 @@ def goal() -> Image.Image:
     return c.image()
 
 
-def ball() -> Image.Image:
-    c = C(24, 24)
-    cx, cy, r = 12, 11, 11
-    for y in range(24):
-        for x in range(24):
-            d2 = (x - cx) ** 2 + (y - cy) ** 2
-            if d2 <= r * r:
-                nx = (x - (cx - 3)) / r
-                ny = (y - (cy - 3)) / r
-                lit = nx * nx + ny * ny
-                if lit < 0.35:
-                    col = BALL_W
-                elif lit < 0.85:
-                    col = BALL_G
-                else:
-                    col = BALL_M
-                c.put(x, y, col)
-            elif d2 <= (r + 1.2) ** 2:
-                c.put(x, y, BALL_K)
-    # classic stitched patches
-    def seam(points: list[tuple[int, int]]) -> None:
-        for i in range(len(points) - 1):
-            x0, y0 = points[i]
-            x1, y1 = points[i + 1]
-            steps = max(abs(x1 - x0), abs(y1 - y0), 1)
-            for s in range(steps + 1):
-                c.put(x0 + round((x1 - x0) * s / steps), y0 + round((y1 - y0) * s / steps), BALL_K)
+def _norm(v: tuple[float, float, float]) -> tuple[float, float, float]:
+    x, y, z = v
+    n = math.sqrt(x * x + y * y + z * z) or 1.0
+    return (x / n, y / n, z / n)
 
-    c.ellipse(12, 8, 2, 2, BALL_K)
-    seam([(10, 8), (7, 12), (9, 16)])
-    seam([(14, 8), (17, 12), (15, 16)])
-    seam([(9, 16), (12, 18), (15, 16)])
-    seam([(7, 12), (12, 11), (17, 12)])
-    c.shadow(12, 22, 7, 1)
+
+def _dot(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _rot(v: tuple[float, float, float], axis: tuple[float, float, float], ang: float) -> tuple[float, float, float]:
+    ax = _norm(axis)
+    c, s = math.cos(ang), math.sin(ang)
+    d = _dot(ax, v)
+    cr = _cross(ax, v)
+    return (
+        v[0] * c + cr[0] * s + ax[0] * d * (1 - c),
+        v[1] * c + cr[1] * s + ax[1] * d * (1 - c),
+        v[2] * c + cr[2] * s + ax[2] * d * (1 - c),
+    )
+
+
+def _soccer_faces() -> list[tuple[tuple[float, float, float], bool]]:
+    """Pentagon (True) and hexagon (False) face centers of a truncated icosahedron."""
+    phi = (1 + math.sqrt(5)) / 2
+    verts: list[tuple[float, float, float]] = []
+    for s1 in (-1.0, 1.0):
+        for s2 in (-1.0, 1.0):
+            verts.append(_norm((0.0, s1, s2 * phi)))
+            verts.append(_norm((s1, s2 * phi, 0.0)))
+            verts.append(_norm((s1 * phi, 0.0, s2)))
+    dists: list[tuple[float, int, int]] = []
+    for i in range(len(verts)):
+        for j in range(i + 1, len(verts)):
+            dx = verts[i][0] - verts[j][0]
+            dy = verts[i][1] - verts[j][1]
+            dz = verts[i][2] - verts[j][2]
+            dists.append((math.sqrt(dx * dx + dy * dy + dz * dz), i, j))
+    edge_len = min(d for d, _, _ in dists)
+    edges: set[tuple[int, int]] = set()
+    adj: list[set[int]] = [set() for _ in verts]
+    for d, i, j in dists:
+        if d < edge_len * 1.15:
+            edges.add((i, j))
+            adj[i].add(j)
+            adj[j].add(i)
+    faces: list[tuple[tuple[float, float, float], bool]] = [(v, True) for v in verts]
+    seen: set[tuple[int, int, int]] = set()
+    for i, j in edges:
+        for k in adj[i] & adj[j]:
+            tri = tuple(sorted((i, j, k)))
+            if tri in seen:
+                continue
+            seen.add(tri)
+            cx = verts[i][0] + verts[j][0] + verts[k][0]
+            cy = verts[i][1] + verts[j][1] + verts[k][1]
+            cz = verts[i][2] + verts[j][2] + verts[k][2]
+            faces.append((_norm((cx, cy, cz)), False))
+    # Aim a pentagon at the camera, slightly above center.
+    pent = max((c for c, pent in faces if pent), key=lambda c: c[2])
+    aim = _norm((0.08, 0.22, 1.0))
+    axis = _cross(pent, aim)
+    if math.sqrt(axis[0] ** 2 + axis[1] ** 2 + axis[2] ** 2) > 1e-6:
+        ang = math.acos(max(-1.0, min(1.0, _dot(pent, aim))))
+        faces = [(_rot(c, axis, ang), p) for c, p in faces]
+    return faces
+
+
+_SOCCER_FACES = _soccer_faces()
+
+
+def ball_frame(tumble: float) -> Image.Image:
+    """Classic Telstar ball. Lighting is fixed; only the panels rotate."""
+    size = 32
+    c = C(size, size)
+    cx = cy = (size - 1) / 2
+    r = size / 2 - 1.15
+    light = _norm((-0.52, 0.62, 0.48))  # top-left, toward camera (y up)
+    axis = _norm((0.35, 0.92, 0.18))
+    faces = [(_rot(cen, axis, tumble), pent) for cen, pent in _SOCCER_FACES]
+    for y in range(size):
+        for x in range(size):
+            # image y down → 3D y up
+            nx = (x - cx) / r
+            ny = -(y - cy) / r
+            rr = nx * nx + ny * ny
+            if rr > 1.02:
+                continue
+            if rr > 1.0:
+                c.put(x, y, BALL_K)
+                continue
+            nz = math.sqrt(max(0.0, 1.0 - min(rr, 1.0)))
+            p = _norm((nx, ny, nz))
+            best_i = 0
+            best_d = -2.0
+            second = -2.0
+            for i, (cen, _) in enumerate(faces):
+                d = _dot(p, cen)
+                if d > best_d:
+                    second = best_d
+                    best_d = d
+                    best_i = i
+                elif d > second:
+                    second = d
+            pent = faces[best_i][1]
+            seam = best_d - second < 0.072
+            ndot = max(0.0, _dot(p, light))
+            if pent:
+                shade = 0.38 + 0.62 * ndot
+                col = tuple(min(255, int(BALL_K2[i] * shade + BALL_K[i] * (1 - shade) * 0.25)) for i in range(3)) + (255,)
+            else:
+                if ndot > 0.82:
+                    base = BALL_HI
+                elif ndot > 0.55:
+                    base = BALL_W
+                elif ndot > 0.28:
+                    base = BALL_W2
+                else:
+                    base = BALL_W3
+                col = base
+            if seam:
+                mix = 0.72
+                col = tuple(int(col[i] * (1 - mix) + BALL_SEAM[i] * mix) for i in range(3)) + (255,)
+            # rim
+            if rr > 0.90:
+                t = (rr - 0.90) / 0.10
+                col = tuple(int(col[i] * (1 - t) + BALL_K[i] * t) for i in range(3)) + (255,)
+            # soft highlight disc, top-left — not rotated with the panels
+            hx, hy = nx + 0.38, ny - 0.42
+            spec = hx * hx + hy * hy
+            if spec < 0.045 and not pent:
+                col = BALL_HI
+            elif spec < 0.10 and not pent:
+                col = tuple(min(255, int(col[i] * 0.45 + BALL_HI[i] * 0.55)) for i in range(3)) + (255,)
+            c.put(x, y, col)
     return c.image()
+
+
+def ball_sheet() -> Image.Image:
+    frames = [ball_frame(i * math.pi / 8) for i in range(4)]
+    img = Image.new("RGBA", (frames[0].width * 4, frames[0].height), (0, 0, 0, 0))
+    for i, fr in enumerate(frames):
+        img.paste(fr, (i * fr.width, 0), fr)
+    return img
 
 
 def sheet_pair(a: Image.Image, b: Image.Image) -> Image.Image:
@@ -362,13 +499,15 @@ def main() -> None:
     lamp_on = lamp(True)
     desk_idle = desk(False)
     desk_code = desk(True)
+    chair_im = chair()
     studio_idle = studio(False)
     studio_play = studio(True)
     goal_im = goal()
-    ball_im = ball()
+    ball_im = ball_sheet()
 
     sheet_pair(lamp_off, lamp_on).save(OUT / "prop-lamp.png")
     sheet_pair(desk_idle, desk_code).save(OUT / "prop-desk.png")
+    chair_im.save(OUT / "prop-chair.png")
     sheet_pair(studio_idle, studio_play).save(OUT / "prop-studio.png")
     goal_im.save(OUT / "prop-goal.png")
     ball_im.save(OUT / "prop-ball.png")
@@ -378,10 +517,11 @@ def main() -> None:
         "lamp_on": lamp_on,
         "desk_idle": desk_idle,
         "desk_code": desk_code,
+        "chair": chair_im,
         "studio_idle": studio_idle,
         "studio_play": studio_play,
         "goal": goal_im,
-        "ball": ball_im,
+        "ball0": ball_im.crop((0, 0, 32, 32)),
     }.items():
         im.resize((im.width * 3, im.height * 3), Image.Resampling.NEAREST).save(
             PREVIEW / f"{name}@3x.png"

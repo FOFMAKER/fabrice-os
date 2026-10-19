@@ -3,19 +3,22 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 import { playTone, setStudioBeatMuted, startStudioBeat, stopStudioBeat } from "@/lib/play-tone";
 
 const SIGNATURE = "built by fabrice";
-const BALL_R = 10;
+const BALL_R = 13;
+const BALL_FRAMES = 4;
 const MASCOT_W = 30;
 const MASCOT_H = 82;
 const SPRITE_W = 52;
 const SPRITE_H = 82;
-const SPRITE_COLS = 22;
+const SPRITE_COLS = 25;
 const MARK_W = 11;
 const MARK_H = 7;
 const GROUND = 18;
-const DESK_W = 128;
+const DESK_W = 98;
 const DESK_H = 69;
+const CHAIR_W = 30;
+const CHAIR_H = 46;
 const STUDIO_W = 108;
-const STUDIO_H = 72;
+const STUDIO_H = 64;
 const LAMP_W = 24;
 const LAMP_H = 84;
 const LAMP_HIT_W = 44;
@@ -28,12 +31,16 @@ const HERO_SRC = "/mascot/hero.png";
 const MARK_SRC = "/mascot/mark-28.png";
 const PROP_LAMP = "/mascot/prop-lamp.png";
 const PROP_DESK = "/mascot/prop-desk.png";
+const PROP_CHAIR = "/mascot/prop-chair.png";
 const PROP_STUDIO = "/mascot/prop-studio.png";
 const PROP_BALL = "/mascot/prop-ball.png";
 const COL_IDLE = 0;
 const COL_HOP = 9;
 const COL_BEND = 10;
 const COL_SIT = 11;
+const COL_SIT_B = 22;
+const COL_JAM_A = 23;
+const COL_JAM_B = 24;
 const COL_DRIB_A = 12;
 const COL_DRIB_B = 13;
 const COL_JUG_L = 14;
@@ -46,28 +53,31 @@ const COL_HEEL = 20;
 const COL_TRAP = 21;
 /** Bib-center per sheet column so the cream 28 can be drawn un-mirrored. */
 const BIB = [
-  { x: 28, y: 30 },
-  { x: 28, y: 31 },
-  { x: 28, y: 31 },
-  { x: 28, y: 30 },
-  { x: 32, y: 32 },
-  { x: 32, y: 32 },
-  { x: 32, y: 32 },
-  { x: 28, y: 30 },
-  { x: 28, y: 30 },
-  { x: 32, y: 31 },
-  { x: 25, y: 30 },
+  { x: 28, y: 32 },
+  { x: 28, y: 34 },
+  { x: 28, y: 34 },
+  { x: 28, y: 32 },
+  { x: 31, y: 34 },
+  { x: 31, y: 35 },
+  { x: 31, y: 35 },
+  { x: 28, y: 32 },
+  { x: 28, y: 34 },
+  { x: 31, y: 34 },
+  { x: 16, y: 35 },
+  { x: 31, y: 39 },
+  { x: 29, y: 34 },
+  { x: 32, y: 35 },
+  { x: 28, y: 32 },
+  { x: 28, y: 32 },
+  { x: 29, y: 35 },
+  { x: 27, y: 35 },
+  { x: 32, y: 33 },
+  { x: 30, y: 32 },
   { x: 28, y: 33 },
-  { x: 29, y: 31 },
-  { x: 33, y: 32 },
-  { x: 28, y: 30 },
-  { x: 28, y: 30 },
-  { x: 28, y: 32 },
-  { x: 27, y: 32 },
-  { x: 32, y: 30 },
-  { x: 30, y: 30 },
-  { x: 28, y: 30 },
-  { x: 28, y: 32 },
+  { x: 28, y: 35 },
+  { x: 32, y: 38 },
+  { x: 30, y: 33 },
+  { x: 30, y: 32 },
 ] as const;
 
 type Letter = { ch: string; rot: number };
@@ -187,8 +197,12 @@ function deskX() {
   return lampX() + LAMP_W + 10;
 }
 
+function chairX() {
+  return deskX() + 42;
+}
+
 function sitDeskX() {
-  return deskX() + DESK_W + 4;
+  return chairX() - 8;
 }
 
 function studioX(w: number) {
@@ -196,7 +210,7 @@ function studioX(w: number) {
 }
 
 function sitStudioX(w: number) {
-  return studioX(w) + STUDIO_W + 2;
+  return studioX(w) + 36;
 }
 
 function sceneLeft() {
@@ -366,7 +380,7 @@ function dropZone(s: Scene): Activity {
   const mx = s.mascotX + MASCOT_W / 2;
   const deskL = deskX();
   const studL = studioX(s.w);
-  if (mx >= deskL - 10 && mx <= sitDeskX() + MASCOT_W + 8) return "desk";
+  if (mx >= deskL - 10 && mx <= deskL + DESK_W + 16) return "desk";
   if (showStudio(s.w) && mx >= studL - 10 && mx <= studL + STUDIO_W + 16) return "studio";
   if (mx > playLeft(s.w) - 20 && mx < playRight(s.w) + 12) return "soccer";
   return "idle";
@@ -462,7 +476,7 @@ function settle(s: Scene, next: Activity, muted: boolean) {
     }
     stopTrick(s);
     s.mascotX = sitStudioX(s.w);
-    s.facing = 1;
+    s.facing = -1;
     s.playing = 80;
     s.speech = muted ? "unmute me." : "one more bar.";
     s.speechT = 140;
@@ -551,6 +565,8 @@ function walkPose(phase: number): WalkPose {
 
 function spriteCol({
   sit,
+  jam,
+  typing,
   bending,
   kicking,
   hop,
@@ -559,6 +575,8 @@ function spriteCol({
   trickCol,
 }: {
   sit: boolean;
+  jam: boolean;
+  typing: boolean;
   bending: boolean;
   kicking: boolean;
   hop: number;
@@ -567,7 +585,8 @@ function spriteCol({
   trickCol: number;
 }) {
   if (trickCol >= 0) return trickCol;
-  if (sit) return COL_SIT;
+  if (jam) return typing ? COL_JAM_B : COL_JAM_A;
+  if (sit) return typing ? COL_SIT_B : COL_SIT;
   if (bending) return COL_BEND;
   if (kicking || hop > 5) return COL_HOP;
   if (moving) {
@@ -581,6 +600,7 @@ function PixelMascot({
   kicking,
   facing,
   sit,
+  jam,
   bending,
   hop,
   walkPhase,
@@ -594,6 +614,7 @@ function PixelMascot({
   kicking: boolean;
   facing: 1 | -1;
   sit: boolean;
+  jam: boolean;
   bending: boolean;
   hop: number;
   walkPhase: number;
@@ -604,13 +625,22 @@ function PixelMascot({
   reduced: boolean;
   trickCol: number;
 }) {
-  const moving = !sit && !reduced && speed > 0.16 && !kicking && !bending && trickCol < 0;
+  const moving = !sit && !jam && !reduced && speed > 0.16 && !kicking && !bending && trickCol < 0;
   const turning = !reduced && turnT > 0;
   const breath = reduced ? 0 : Math.sin(idlePhase);
-  const bobY = reduced ? 0 : sit ? breath * 0.35 : moving ? bob : turning ? 0.2 : breath * 0.55;
+  const typing = !reduced && Math.sin(idlePhase * 3.1) > 0;
+  const bobY = reduced
+    ? 0
+    : sit || jam
+      ? breath * (jam ? 1.4 : 0.35)
+      : moving
+        ? bob
+        : turning
+          ? 0.2
+          : breath * 0.55;
   const squash = turning ? 0.84 + 0.16 * (Math.abs(turnT - 9) / 9) : 1;
-  const lean = moving ? 3 : turning ? 2 : 0;
-  const col = spriteCol({ sit, bending, kicking, hop, moving, walkPhase, trickCol });
+  const lean = moving ? 3 : turning ? 2 : jam ? 2 : 0;
+  const col = spriteCol({ sit, jam, typing, bending, kicking, hop, moving, walkPhase, trickCol });
   const bib = BIB[col] ?? BIB[0]!;
   const markLeft =
     facing === 1 ? bib.x - Math.floor(MARK_W / 2) : SPRITE_W - bib.x - Math.ceil(MARK_W / 2);
@@ -711,6 +741,36 @@ function ContactShadow({
         background: `oklch(0.2 0.02 70 / ${opacity})`,
       }}
     />
+  );
+}
+
+function MusicNotes({ x, y, t, show }: { x: number; y: number; t: number; show: boolean }) {
+  if (!show) return null;
+  const notes = [
+    { g: "♪", dx: 8, sp: 0.8 },
+    { g: "♫", dx: 18, sp: 1.15 },
+    { g: "♪", dx: -2, sp: 0.95 },
+  ];
+  return (
+    <>
+      {notes.map((n, i) => {
+        const phase = (t * n.sp + i * 14) % 54;
+        return (
+          <span
+            key={i}
+            aria-hidden
+            className="text-ink pointer-events-none absolute z-[12] font-mono text-[11px]"
+            style={{
+              left: x + n.dx,
+              bottom: y + 10 + phase * 0.65,
+              opacity: Math.max(0, 1 - phase / 54),
+            }}
+          >
+            {n.g}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
@@ -1283,14 +1343,15 @@ export function SoccerPlayground({
               <div className="bg-ink/[0.07] h-[3px] w-full" />
             </div>
             <ContactShadow x={lampCX} y={GROUND} rx={10} />
-            <ContactShadow x={deskCX} y={GROUND} rx={28} />
+            <ContactShadow x={deskCX} y={GROUND} rx={24} />
+            <ContactShadow x={chairX() + CHAIR_W / 2} y={GROUND} rx={10} />
             {studioVisible && <ContactShadow x={studioCX} y={GROUND} rx={22} />}
             <ContactShadow x={mascotCX} y={GROUND} rx={12} />
             <ContactShadow
               x={s.ballX}
               y={GROUND}
-              rx={7 * ballShadow}
-              opacity={0.1 + 0.16 * ballShadow}
+              rx={BALL_R * 0.72 * ballShadow}
+              opacity={0.08 + 0.22 * ballShadow}
             />
 
             <button
@@ -1346,9 +1407,16 @@ export function SoccerPlayground({
               />
             )}
 
+            <div
+              aria-hidden
+              className="pointer-events-none absolute z-[8]"
+              style={{ left: chairX(), bottom: GROUND, width: CHAIR_W, height: CHAIR_H }}
+            >
+              <PixelProp src={PROP_CHAIR} width={CHAIR_W} height={CHAIR_H} />
+            </div>
             <button
               type="button"
-              className="absolute cursor-crosshair"
+              className="absolute z-[4] cursor-crosshair"
               style={{ left: dx, bottom: GROUND, width: DESK_W, height: DESK_H }}
               aria-label="Coding desk"
               onClick={() => {
@@ -1368,7 +1436,7 @@ export function SoccerPlayground({
                 width={DESK_W}
                 height={DESK_H}
                 frames={2}
-                frame={s.activity === "desk" || s.coding > 0 ? 1 : 0}
+                frame={s.activity === "desk" && Math.floor(s.idlePhase * 7) % 6 !== 0 ? 1 : 0}
               />
             </button>
 
@@ -1392,6 +1460,7 @@ export function SoccerPlayground({
                 width: SPRITE_W,
                 height: MASCOT_H + 10,
                 cursor: s.lift > 0 ? "grabbing" : "grab",
+                zIndex: 10,
               }}
               onPointerDown={onPointerDown("mascot")}
               onPointerEnter={() => {
@@ -1410,7 +1479,8 @@ export function SoccerPlayground({
               <PixelMascot
                 kicking={s.kicking}
                 facing={s.facing}
-                sit={sit && s.lift === 0}
+                sit={s.activity === "desk" && s.lift === 0}
+                jam={s.activity === "studio" && s.lift === 0}
                 bending={
                   (s.activity === "fix" || s.pending === "fix") &&
                   s.fixPass === "sweep" &&
@@ -1453,21 +1523,23 @@ export function SoccerPlayground({
               }}
             >
               <div className="pointer-events-none flex h-full items-end justify-center">
-                <div
-                  style={{
-                    transform: `rotate(${s.ballSpin}deg)`,
-                    transformOrigin: "center",
-                  }}
-                >
-                  <PixelProp src={PROP_BALL} width={BALL_R * 2} height={BALL_R * 2} />
-                </div>
+                <PixelProp
+                  src={PROP_BALL}
+                  width={BALL_R * 2}
+                  height={BALL_R * 2}
+                  frames={BALL_FRAMES}
+                  frame={
+                    Math.floor((((s.ballSpin % 360) + 360) % 360) / (360 / BALL_FRAMES)) %
+                    BALL_FRAMES
+                  }
+                />
               </div>
             </div>
 
             {studioVisible && (
               <button
                 type="button"
-                className="text-ink absolute cursor-crosshair"
+                className="text-ink absolute z-[4] cursor-crosshair"
                 style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: STUDIO_H }}
                 aria-label="Music studio"
                 onClick={() => {
@@ -1490,6 +1562,12 @@ export function SoccerPlayground({
                 />
               </button>
             )}
+            <MusicNotes
+              x={mascotCX + 8}
+              y={GROUND + MASCOT_H - 8}
+              t={s.lifeT}
+              show={s.activity === "studio" && s.lift === 0 && !reduced}
+            />
 
             {ready && (
               <>
