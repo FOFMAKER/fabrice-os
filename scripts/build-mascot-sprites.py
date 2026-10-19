@@ -133,6 +133,90 @@ def bounce(im: Image.Image, dy: int) -> Image.Image:
     return canvas
 
 
+def shift_region(
+    im: Image.Image, x0: int, y0: int, x1: int, y1: int, dx: int, dy: int
+) -> Image.Image:
+    """Move a pixel rectangle, leaving transparency behind — for kicked legs."""
+    arr = np.array(im)
+    h, w = arr.shape[:2]
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(w, x1), min(h, y1)
+    if x1 <= x0 or y1 <= y0:
+        return im
+    chunk = arr[y0:y1, x0:x1].copy()
+    arr[y0:y1, x0:x1] = 0
+    ny0, nx0 = y0 + dy, x0 + dx
+    ch, cw = chunk.shape[:2]
+    sy0 = max(0, -ny0)
+    sx0 = max(0, -nx0)
+    dy0 = min(h, ny0 + ch)
+    dx1 = min(w, nx0 + cw)
+    if dy0 > max(0, ny0) and dx1 > max(0, nx0):
+        dest = arr[max(0, ny0) : dy0, max(0, nx0) : dx1]
+        src = chunk[sy0 : sy0 + dest.shape[0], sx0 : sx0 + dest.shape[1]]
+        mask = src[:, :, 3] > 0
+        dest[mask] = src[mask]
+    return Image.fromarray(arr)
+
+
+def shear(im: Image.Image, k: float) -> Image.Image:
+    """Horizontal shear from the feet. Positive k leans the head forward (right)."""
+    arr = np.array(im)
+    h, w = arr.shape[:2]
+    out = np.zeros_like(arr)
+    for y in range(h):
+        t = 1.0 - y / max(h - 1, 1)
+        shift = int(round(k * t))
+        if shift >= 0:
+            if shift < w:
+                out[y, shift:] = arr[y, : w - shift]
+        else:
+            s = -shift
+            if s < w:
+                out[y, : w - s] = arr[y, s:]
+    return Image.fromarray(out)
+
+
+def stitch_knee(im: Image.Image, x0: int, x1: int, y: int) -> Image.Image:
+    """Clone a denim row to close the gap a lifted shin leaves at the knee."""
+    arr = np.array(im)
+    h, w = arr.shape[:2]
+    y = clamp_int(y, 1, h - 2)
+    x0, x1 = max(0, x0), min(w, x1)
+    src = arr[y]
+    for yy in range(y, min(h, y + 5)):
+        for x in range(x0, x1):
+            if arr[yy, x, 3] < 40 and src[x, 3] > 160:
+                arr[yy, x] = src[x]
+    return Image.fromarray(arr)
+
+
+def clamp_int(n: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, n))
+
+
+def kick_front(im: Image.Image, up: int = 10, fwd: int = 4) -> Image.Image:
+    w, h = im.size
+    x0, y0 = int(w * 0.50), int(h * 0.70)
+    out = shift_region(im, x0, y0, w - 1, h, fwd, -up)
+    return stitch_knee(out, x0, w - 1, y0 - 1)
+
+
+def kick_back(im: Image.Image, up: int = 10, back: int = -3) -> Image.Image:
+    w, h = im.size
+    x1, y0 = int(w * 0.52), int(h * 0.70)
+    out = shift_region(im, 1, y0, x1, h, back, -up)
+    return stitch_knee(out, 1, x1, y0 - 1)
+
+
+def knee_up(im: Image.Image) -> Image.Image:
+    w, h = im.size
+    base = squat(im, 0.94)
+    x0, y0 = int(w * 0.48), int(h * 0.58)
+    out = shift_region(base, x0, y0, w - 2, int(h * 0.86), 2, -8)
+    return stitch_knee(out, x0, w - 2, y0 - 1)
+
+
 def squat(im: Image.Image, factor: float = 0.90) -> Image.Image:
     w, h = im.size
     nh = max(8, int(h * factor))
@@ -250,8 +334,51 @@ def main() -> None:
         bounce(walk, -1),  # 7 reach
     ]
 
-    names = ["idle", *[f"w{i}" for i in range(8)], "hop", "bend", "sit"]
-    rights = [idle, *walk_frames, hop, bend, sit]
+    dribble_a = shear(walk_frames[0], 2.0)
+    dribble_b = kick_front(shear(run, 1.5), up=8, fwd=4)
+    juggle_l = kick_back(idle, up=13, back=-3)
+    juggle_r = kick_front(idle, up=13, fwd=4)
+    juggle_k = knee_up(idle)
+    rainbow_wind = squat(shear(idle, -3.5), 0.92)
+    rainbow_up = kick_front(bounce(run, -6), up=16, fwd=3)
+    around = kick_front(shear(idle, 2.5), up=10, fwd=8)
+    heel = kick_back(shear(idle, -2.0), up=16, back=-6)
+    trap = kick_front(squat(idle, 0.93), up=4, fwd=6)
+
+    names = [
+        "idle",
+        *[f"w{i}" for i in range(8)],
+        "hop",
+        "bend",
+        "sit",
+        "dribble_a",
+        "dribble_b",
+        "juggle_l",
+        "juggle_r",
+        "juggle_k",
+        "rainbow_wind",
+        "rainbow_up",
+        "around",
+        "heel",
+        "trap",
+    ]
+    rights = [
+        idle,
+        *walk_frames,
+        hop,
+        bend,
+        sit,
+        dribble_a,
+        dribble_b,
+        juggle_l,
+        juggle_r,
+        juggle_k,
+        rainbow_wind,
+        rainbow_up,
+        around,
+        heel,
+        trap,
+    ]
     anchors: list[tuple[int, int]] = [bib_anchor(im) for im in rights]
 
     cols = len(names)
@@ -300,6 +427,8 @@ def main() -> None:
 
     print("wrote", OUT_DIR / "hero.png", "frames", cols, "size", sheet.size)
     print("anchors", list(zip(names, anchors)))
+    scaled = [(round(x * 52 / 64), round(y * 52 / 64)) for x, y in anchors]
+    print("BIB_52", scaled)
     print("PATCH", PATCH_W, PATCH_H)
 
 

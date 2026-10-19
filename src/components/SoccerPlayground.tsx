@@ -8,12 +8,10 @@ const MASCOT_W = 30;
 const MASCOT_H = 82;
 const SPRITE_W = 52;
 const SPRITE_H = 82;
-const SPRITE_COLS = 12;
+const SPRITE_COLS = 22;
 const MARK_W = 11;
 const MARK_H = 7;
-const ARC_BASE = 14;
-const GOAL_W = 56;
-const GOAL_H = 88;
+const GROUND = 18;
 const DESK_W = 128;
 const DESK_H = 69;
 const STUDIO_W = 108;
@@ -21,7 +19,7 @@ const STUDIO_H = 72;
 const LAMP_W = 24;
 const LAMP_H = 84;
 const LAMP_HIT_W = 44;
-const SCENE_H = 196;
+const SCENE_H = 168;
 const PAD = 10;
 const LETTER_W = 7.1;
 const CRUISE = 1.35;
@@ -31,30 +29,60 @@ const MARK_SRC = "/mascot/mark-28.png";
 const PROP_LAMP = "/mascot/prop-lamp.png";
 const PROP_DESK = "/mascot/prop-desk.png";
 const PROP_STUDIO = "/mascot/prop-studio.png";
-const PROP_GOAL = "/mascot/prop-goal.png";
 const PROP_BALL = "/mascot/prop-ball.png";
+const COL_IDLE = 0;
+const COL_HOP = 9;
+const COL_BEND = 10;
+const COL_SIT = 11;
+const COL_DRIB_A = 12;
+const COL_DRIB_B = 13;
+const COL_JUG_L = 14;
+const COL_JUG_R = 15;
+const COL_JUG_K = 16;
+const COL_RAIN_W = 17;
+const COL_RAIN_U = 18;
+const COL_AROUND = 19;
+const COL_HEEL = 20;
+const COL_TRAP = 21;
 /** Bib-center per sheet column so the cream 28 can be drawn un-mirrored. */
 const BIB = [
+  { x: 28, y: 30 },
   { x: 28, y: 31 },
-  { x: 28, y: 32 },
-  { x: 28, y: 32 },
   { x: 28, y: 31 },
+  { x: 28, y: 30 },
   { x: 32, y: 32 },
-  { x: 33, y: 32 },
-  { x: 33, y: 32 },
-  { x: 28, y: 31 },
-  { x: 28, y: 31 },
   { x: 32, y: 32 },
-  { x: 25, y: 31 },
-  { x: 28, y: 34 },
+  { x: 32, y: 32 },
+  { x: 28, y: 30 },
+  { x: 28, y: 30 },
+  { x: 32, y: 31 },
+  { x: 25, y: 30 },
+  { x: 28, y: 33 },
+  { x: 29, y: 31 },
+  { x: 33, y: 32 },
+  { x: 28, y: 30 },
+  { x: 28, y: 30 },
+  { x: 28, y: 32 },
+  { x: 27, y: 32 },
+  { x: 32, y: 30 },
+  { x: 30, y: 30 },
+  { x: 28, y: 30 },
+  { x: 28, y: 32 },
 ] as const;
-
-let goalLock = false;
 
 type Letter = { ch: string; rot: number };
 type Hint = "ball" | "desk" | "lamp" | "studio" | "mascot" | "soccer" | null;
 type Activity = "idle" | "walk" | "desk" | "studio" | "soccer" | "fix";
 type FixPass = "approach" | "sweep";
+type TrickId = "dribble" | "juggle" | "rainbow" | "around";
+
+const TRICK_ORDER: TrickId[] = ["dribble", "juggle", "rainbow", "dribble", "around"];
+const TRICK_DUR: Record<TrickId, number> = {
+  dribble: 200,
+  juggle: 216,
+  rainbow: 160,
+  around: 150,
+};
 
 type Scene = {
   w: number;
@@ -63,6 +91,7 @@ type Scene = {
   ballY: number;
   ballVx: number;
   ballVy: number;
+  ballSpin: number;
   mascotX: number;
   facing: 1 | -1;
   walk: number;
@@ -71,15 +100,11 @@ type Scene = {
   idlePhase: number;
   turnT: number;
   bob: number;
-  score: number;
   letters: Letter[];
   hint: Hint;
   kicking: boolean;
-  heading: boolean;
   hop: number;
   hopVy: number;
-  lastTouch: "foot" | "head" | null;
-  skills: number;
   lampOn: boolean;
   coding: number;
   playing: number;
@@ -88,7 +113,6 @@ type Scene = {
   activity: Activity;
   pending: Activity;
   targetX: number | null;
-  kickCd: number;
   lookT: number;
   lifeT: number;
   lift: number;
@@ -99,6 +123,15 @@ type Scene = {
   lastFixIndex: number;
   fixPass: FixPass;
   letterGuard: number;
+  trick: TrickId | null;
+  trickT: number;
+  trickDur: number;
+  trickFromX: number;
+  trickCol: number;
+  pauseT: number;
+  juggleN: number;
+  trickI: number;
+  queuedTrick: TrickId | null;
 };
 
 function knockedLetters(): Letter[] {
@@ -112,15 +145,23 @@ function stillLetters(): Letter[] {
   return SIGNATURE.split("").map((ch) => ({ ch, rot: 0 }));
 }
 
-function prefersReducedMotion() {
-  return (
-    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
 function clamp(n: number, min: number, max: number) {
   if (max < min) return min;
   return Math.min(max, Math.max(min, n));
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
+function easeInOut(t: number) {
+  const x = clamp(t, 0, 1);
+  return x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2;
+}
+
+function parabola(u: number, h: number) {
+  const t = clamp(u, 0, 1);
+  return h * 4 * t * (1 - t);
 }
 
 function bounce(s: Scene, v: number) {
@@ -138,28 +179,6 @@ function showStudio(w: number) {
   return !compactScene(w);
 }
 
-function arcPeak(w: number) {
-  return compactScene(w) ? 18 : 34;
-}
-
-function groundAt(x: number, w: number) {
-  const mid = w * 0.5;
-  const half = Math.max(w * 0.5, 1);
-  const t = clamp((x - mid) / half, -1, 1);
-  return ARC_BASE + arcPeak(w) * (1 - t * t);
-}
-
-function groundSlope(x: number, w: number) {
-  const mid = w * 0.5;
-  const half = Math.max(w * 0.5, 1);
-  const t = clamp((x - mid) / half, -1, 1);
-  return (-2 * arcPeak(w) * t) / half;
-}
-
-function footY(x: number, w: number) {
-  return Math.round(groundAt(x, w));
-}
-
 function lampX() {
   return colLeftX;
 }
@@ -173,19 +192,11 @@ function sitDeskX() {
 }
 
 function studioX(w: number) {
-  return Math.max(deskX() + DESK_W + GOAL_W + 72, w - STUDIO_W - PAD);
+  return Math.max(deskX() + DESK_W + 140, w - STUDIO_W - PAD);
 }
 
 function sitStudioX(w: number) {
   return studioX(w) + STUDIO_W + 2;
-}
-
-function goalX(w: number) {
-  if (compactScene(w)) return Math.max(deskX() + DESK_W + 36, w - GOAL_W - PAD);
-  const crest = w * 0.5 + 38;
-  const min = deskX() + DESK_W + 48;
-  const max = showStudio(w) ? studioX(w) - GOAL_W - 40 : w - GOAL_W - PAD;
-  return clamp(crest, min, max);
 }
 
 function sceneLeft() {
@@ -193,7 +204,50 @@ function sceneLeft() {
 }
 
 function sceneRight(w: number) {
-  return showStudio(w) ? studioX(w) + STUDIO_W : Math.max(goalX(w) + GOAL_W, w - PAD);
+  return showStudio(w) ? studioX(w) + STUDIO_W : w - PAD;
+}
+
+function pitchLeft() {
+  return sitDeskX() + MASCOT_W + 10;
+}
+
+function pitchRight(w: number) {
+  return (showStudio(w) ? studioX(w) : w - PAD) - MASCOT_W - 8;
+}
+
+function lettersInScene(w: number) {
+  return !compactScene(w) && pitchRight(w) - pitchLeft() > 200;
+}
+
+function letterStart(w: number) {
+  return pitchLeft() + 4;
+}
+
+function playLeft(w: number) {
+  if (lettersInScene(w)) return letterStart(w) + SIGNATURE.length * LETTER_W + 16;
+  return pitchLeft();
+}
+
+function playRight(w: number) {
+  return (showStudio(w) ? studioX(w) : w - PAD) - 44;
+}
+
+function pitchHome(w: number) {
+  const left = playLeft(w);
+  const right = playRight(w) - MASCOT_W;
+  return clamp((left + right) / 2, left, right);
+}
+
+function ballMaxX(w: number) {
+  return playRight(w) - BALL_R;
+}
+
+function ballMinX() {
+  return sceneLeft() + BALL_R;
+}
+
+function footBallX(s: Scene) {
+  return s.mascotX + MASCOT_W / 2 + s.facing * (MASCOT_W * 0.38 + 4);
 }
 
 function readLayout(playground: HTMLElement | null) {
@@ -206,41 +260,6 @@ function readLayout(playground: HTMLElement | null) {
   } else {
     colLeftX = PAD;
   }
-}
-
-function ballResetX(w: number) {
-  const afterLetters = lettersInScene(w)
-    ? letterStart(w) + SIGNATURE.length * LETTER_W + 18
-    : pitchLeft() + 20;
-  return clamp(afterLetters + 8, pitchLeft() + 16, goalX(w) - 22);
-}
-
-function pitchLeft() {
-  return sitDeskX() + MASCOT_W + 12;
-}
-
-function pitchRight(w: number) {
-  return goalX(w) - MASCOT_W - 6;
-}
-
-function netBack(w: number) {
-  return goalX(w) + GOAL_W - 1;
-}
-
-function ballMaxX(w: number) {
-  return netBack(w) - BALL_R;
-}
-
-function lettersInScene(w: number) {
-  const span = goalX(w) - (deskX() + DESK_W) - 32;
-  return !compactScene(w) && span > 120;
-}
-
-function letterStart(w: number) {
-  const total = SIGNATURE.length * LETTER_W;
-  const leftBound = sitDeskX() + MASCOT_W + 16;
-  const rightBound = goalX(w) - 36;
-  return leftBound + Math.max(0, (rightBound - leftBound - total) / 2);
 }
 
 function letterX(s: Scene, i: number) {
@@ -265,8 +284,12 @@ function nextFixIndex(s: Scene, from: number) {
 
 function letterEndX(s: Scene) {
   const last = letterX(s, s.letters.length - 1) + 12;
-  const beforeGoal = goalX(s.w) - MASCOT_W - 10;
-  return clamp(Math.min(last, beforeGoal), sceneLeft(), sceneRight(s.w) - MASCOT_W);
+  const beforePlay = playLeft(s.w) - 8;
+  return clamp(
+    Math.min(last, beforePlay, pitchRight(s.w)),
+    sceneLeft(),
+    sceneRight(s.w) - MASCOT_W,
+  );
 }
 
 function letterStartX(s: Scene) {
@@ -297,7 +320,8 @@ function rightPassedLetters(s: Scene, muted: boolean) {
 }
 
 function sendTo(s: Scene, x: number, next: Activity) {
-  if (next === "studio" && !showStudio(s.w)) next = "idle";
+  if (next === "studio" && !showStudio(s.w)) next = "soccer";
+  stopTrick(s);
   s.targetX = clamp(x, sceneLeft(), sceneRight(s.w) - MASCOT_W);
   s.pending = next;
   s.activity = "walk";
@@ -316,6 +340,7 @@ function beginFix(s: Scene, replay: boolean, reduced = false) {
   }
   if ((s.activity === "fix" || s.pending === "fix") && !replay) return;
   if (replay || !lettersNeedFix(s)) s.letters = knockedLetters();
+  stopTrick(s);
   s.fixIndex = 0;
   s.lastFixIndex = 0;
   s.fixHold = 0;
@@ -331,9 +356,9 @@ function beginFix(s: Scene, replay: boolean, reduced = false) {
 }
 
 function dwellFor(next: Activity) {
-  if (next === "soccer") return 560 + Math.floor(Math.random() * 280);
-  if (next === "desk") return 420 + Math.floor(Math.random() * 220);
-  if (next === "studio") return 380 + Math.floor(Math.random() * 200);
+  if (next === "soccer") return 80;
+  if (next === "desk") return 360 + Math.floor(Math.random() * 160);
+  if (next === "studio") return 320 + Math.floor(Math.random() * 140);
   return 90;
 }
 
@@ -343,83 +368,73 @@ function dropZone(s: Scene): Activity {
   const studL = studioX(s.w);
   if (mx >= deskL - 10 && mx <= sitDeskX() + MASCOT_W + 8) return "desk";
   if (showStudio(s.w) && mx >= studL - 10 && mx <= studL + STUDIO_W + 16) return "studio";
-  if (mx > pitchLeft() - 16 && mx < pitchRight(s.w) + 28) return "soccer";
-  if (Math.abs(mx - s.ballX) < 40) return "soccer";
+  if (mx > playLeft(s.w) - 20 && mx < playRight(s.w) + 12) return "soccer";
   return "idle";
 }
 
-function nearBall(s: Scene, extra = 0) {
-  const mx = s.mascotX + MASCOT_W / 2;
-  return Math.abs(s.ballX - mx) < 24 + extra;
+function stopTrick(s: Scene) {
+  s.trick = null;
+  s.trickCol = -1;
+  s.kicking = false;
+  s.trickT = 0;
 }
 
-function mascotGround(s: Scene) {
-  return groundAt(s.mascotX + MASCOT_W / 2, s.w);
+function parkBall(s: Scene) {
+  s.ballVx = 0;
+  s.ballVy = 0;
+  s.ballX = clamp(footBallX(s), ballMinX(), ballMaxX(s.w));
+  s.ballY = GROUND + BALL_R;
 }
 
-function atHead(s: Scene) {
-  const head = mascotGround(s) + MASCOT_H - 4;
-  return s.ballY > head - 16 && s.ballY < head + 14;
-}
-
-function atFoot(s: Scene) {
-  return s.ballY <= groundAt(s.ballX, s.w) + BALL_R + 10;
-}
-
-function playContact(s: Scene, muted: boolean, towardGoal = true) {
-  if (s.kickCd > 0 || !nearBall(s, 6)) return;
-  const gx = goalX(s.w);
-  const dir = towardGoal ? Math.sign(gx - s.ballX) || 1 : s.facing;
-  const nearGoal = s.ballX > gx - 90;
-
-  if (atHead(s)) {
-    s.ballVx = dir * (2.6 + Math.random() * 0.7);
-    s.ballVy = 2.1 + Math.random() * 0.6;
-    s.heading = true;
-    bounce(s, 3.2);
-    s.kicking = false;
-    s.lastTouch = "head";
-    s.skills += 1;
-    s.kickCd = 22;
-    s.speech = "header.";
+function startTrick(s: Scene, id: TrickId, muted: boolean) {
+  const left = playLeft(s.w);
+  const right = playRight(s.w) - MASCOT_W;
+  s.mascotX = clamp(s.mascotX, left, right);
+  if (id === "dribble") {
+    const roomR = right - s.mascotX;
+    const roomL = s.mascotX - left;
+    if (s.facing === 1 && roomR < 36 && roomL > roomR) s.facing = -1;
+    if (s.facing === -1 && roomL < 36 && roomR > roomL) s.facing = 1;
+  }
+  s.activity = "soccer";
+  s.pending = "soccer";
+  s.targetX = null;
+  s.trick = id;
+  s.trickT = 0;
+  s.trickDur = TRICK_DUR[id];
+  s.trickFromX = s.mascotX;
+  s.pauseT = 0;
+  s.queuedTrick = null;
+  s.coding = 0;
+  s.playing = 0;
+  s.juggleN = 0;
+  s.letterGuard = Math.max(s.letterGuard, 40);
+  stopStudioBeat();
+  if (id === "dribble") {
+    s.speech = "on the ball.";
     s.speechT = 70;
-    playTone(muted, 260, 0.05, "triangle", 0.04);
+  } else if (id === "rainbow") {
+    s.speech = "rainbow.";
+    s.speechT = 130;
+  } else if (id === "around") {
+    s.speech = "around.";
+    s.speechT = 80;
+  } else {
+    s.speech = "";
+  }
+  playTone(muted, id === "juggle" ? 280 : 220, 0.04, "sine", 0.03);
+}
+
+function requestTrick(s: Scene, muted: boolean, prefer?: TrickId) {
+  const id = prefer ?? TRICK_ORDER[s.trickI % TRICK_ORDER.length]!;
+  if (prefer == null) s.trickI += 1;
+  if (s.activity === "desk" || s.activity === "studio" || s.activity === "fix") {
+    s.queuedTrick = id;
+    sendTo(s, pitchHome(s.w), "soccer");
     return;
   }
-
-  if (!atFoot(s)) return;
-
-  const roll = Math.random();
-  s.heading = false;
-  s.kicking = true;
-  s.lastTouch = "foot";
-  if (!nearGoal && roll < 0.34) {
-    s.ballVx = dir * (0.35 + Math.random() * 0.4);
-    s.ballVy = 4.8 + Math.random() * 0.6;
-    s.kickCd = 18;
-    s.skills += 1;
-    s.speech = "keepy-up.";
-    s.speechT = 70;
-    playTone(muted, 320, 0.04, "sine", 0.03);
-  } else if (!nearGoal && roll < 0.55) {
-    s.ballVx = dir * (1.5 + Math.random() * 0.5);
-    s.ballVy = 3.6 + Math.random() * 0.5;
-    s.kickCd = 20;
-    s.skills += 1;
-    s.speech = "flick.";
-    s.speechT = 70;
-    playTone(muted, 240, 0.04, "square", 0.03);
-  } else if (nearGoal) {
-    s.ballVx = dir * (3.1 + Math.random() * 0.9);
-    s.ballVy = 2.8 + Math.random() * 0.5;
-    s.kickCd = 32;
-    playTone(muted, 180, 0.05, "sine", 0.05);
-  } else {
-    s.ballVx = dir * (1.35 + Math.random() * 0.45);
-    s.ballVy = 1.2;
-    s.kickCd = 16;
-    playTone(muted, 210, 0.03, "sine", 0.028);
-  }
+  if (s.pending === "fix") return;
+  startTrick(s, id, muted);
 }
 
 function settle(s: Scene, next: Activity, muted: boolean) {
@@ -427,8 +442,9 @@ function settle(s: Scene, next: Activity, muted: boolean) {
   s.targetX = null;
   s.pending = next;
   s.walkVel = 0;
-  s.lifeT = dwellFor(next);
+  s.lifeT = 0;
   if (next === "desk") {
+    stopTrick(s);
     s.mascotX = sitDeskX();
     s.facing = -1;
     s.coding = 80;
@@ -438,11 +454,13 @@ function settle(s: Scene, next: Activity, muted: boolean) {
     playTone(muted, 1400, 0.03, "square", 0.025);
   } else if (next === "studio") {
     if (!showStudio(s.w)) {
-      s.activity = "idle";
-      s.pending = "idle";
+      s.activity = "soccer";
+      s.pending = "soccer";
+      s.pauseT = 50;
       stopStudioBeat();
       return;
     }
+    stopTrick(s);
     s.mascotX = sitStudioX(s.w);
     s.facing = 1;
     s.playing = 80;
@@ -451,9 +469,12 @@ function settle(s: Scene, next: Activity, muted: boolean) {
     startStudioBeat(muted);
   } else if (next === "soccer") {
     stopStudioBeat();
-    s.speech = "let's play.";
-    s.speechT = 90;
-    if (nearBall(s, 16)) playContact(s, muted, true);
+    s.pauseT = 36;
+    if (s.queuedTrick) {
+      const id = s.queuedTrick;
+      s.queuedTrick = null;
+      startTrick(s, id, muted);
+    }
   } else if (next === "fix") {
     s.activity = "fix";
   } else {
@@ -532,32 +553,32 @@ function spriteCol({
   sit,
   bending,
   kicking,
-  heading,
   hop,
   moving,
   walkPhase,
+  trickCol,
 }: {
   sit: boolean;
   bending: boolean;
   kicking: boolean;
-  heading: boolean;
   hop: number;
   moving: boolean;
   walkPhase: number;
+  trickCol: number;
 }) {
-  if (sit) return 11;
-  if (bending) return 10;
-  if (kicking || heading || hop > 5) return 9;
+  if (trickCol >= 0) return trickCol;
+  if (sit) return COL_SIT;
+  if (bending) return COL_BEND;
+  if (kicking || hop > 5) return COL_HOP;
   if (moving) {
     const p = ((walkPhase % 1) + 1) % 1;
     return 1 + (Math.floor(p * 8) % 8);
   }
-  return 0;
+  return COL_IDLE;
 }
 
 function PixelMascot({
   kicking,
-  heading,
   facing,
   sit,
   bending,
@@ -568,9 +589,9 @@ function PixelMascot({
   turnT,
   bob,
   reduced,
+  trickCol,
 }: {
   kicking: boolean;
-  heading: boolean;
   facing: 1 | -1;
   sit: boolean;
   bending: boolean;
@@ -581,14 +602,15 @@ function PixelMascot({
   turnT: number;
   bob: number;
   reduced: boolean;
+  trickCol: number;
 }) {
-  const moving = !sit && !reduced && speed > 0.16 && !kicking && !heading && !bending;
+  const moving = !sit && !reduced && speed > 0.16 && !kicking && !bending && trickCol < 0;
   const turning = !reduced && turnT > 0;
   const breath = reduced ? 0 : Math.sin(idlePhase);
   const bobY = reduced ? 0 : sit ? breath * 0.35 : moving ? bob : turning ? 0.2 : breath * 0.55;
   const squash = turning ? 0.84 + 0.16 * (Math.abs(turnT - 9) / 9) : 1;
-  const lean = heading ? -8 : moving ? 3 : turning ? 2 : 0;
-  const col = spriteCol({ sit, bending, kicking, heading, hop, moving, walkPhase });
+  const lean = moving ? 3 : turning ? 2 : 0;
+  const col = spriteCol({ sit, bending, kicking, hop, moving, walkPhase, trickCol });
   const bib = BIB[col] ?? BIB[0]!;
   const markLeft =
     facing === 1 ? bib.x - Math.floor(MARK_W / 2) : SPRITE_W - bib.x - Math.ceil(MARK_W / 2);
@@ -666,97 +688,29 @@ function PixelProp({
   );
 }
 
-function ArcGround({ w, h }: { w: number; h: number }) {
-  const pts: string[] = [];
-  for (let x = 0; x <= w; x += 2) {
-    pts.push(`${x},${h - footY(x, w)}`);
-  }
-  const line = `M ${pts.join(" L ")}`;
-  const fill = `${line} L ${w},${h} L 0,${h} Z`;
-  return (
-    <svg
-      aria-hidden
-      className="pointer-events-none absolute inset-0 text-ink"
-      width={w}
-      height={h}
-      shapeRendering="crispEdges"
-    >
-      <path d={fill} fill="currentColor" fillOpacity={0.045} />
-      <path d={line} fill="none" stroke="currentColor" strokeOpacity={0.12} strokeWidth={5} />
-      <path d={line} fill="none" stroke="currentColor" strokeOpacity={0.32} strokeWidth={2} />
-    </svg>
-  );
-}
-
-function ContactShadow({ x, y, rx }: { x: number; y: number; rx: number }) {
+function ContactShadow({
+  x,
+  y,
+  rx,
+  opacity = 0.2,
+}: {
+  x: number;
+  y: number;
+  rx: number;
+  opacity?: number;
+}) {
   return (
     <div
       aria-hidden
-      className="bg-ink/20 pointer-events-none absolute rounded-full"
+      className="pointer-events-none absolute rounded-full"
       style={{
         left: x - rx,
         bottom: y - 2,
         width: rx * 2,
         height: 5,
+        background: `oklch(0.2 0.02 70 / ${opacity})`,
       }}
     />
-  );
-}
-
-function ArcLetters({
-  letters,
-  w,
-  onActivate,
-  onHover,
-}: {
-  letters: Letter[];
-  w: number;
-  onActivate: () => void;
-  onHover?: () => void;
-}) {
-  const start = letterStart(w);
-  const total = SIGNATURE.length * LETTER_W;
-  const minY = footY(start, w);
-  const maxY = footY(start + total / 2, w);
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="built by fabrice. Activate to straighten the letters."
-        className="absolute z-[5] cursor-pointer"
-        style={{
-          left: start,
-          width: total,
-          bottom: minY - 2,
-          height: 22 + Math.max(0, maxY - minY),
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onActivate();
-        }}
-        onPointerEnter={() => onHover?.()}
-      />
-      {letters.map((l, i) => {
-        const x = start + i * LETTER_W;
-        return (
-          <span
-            key={`${l.ch}-${i}`}
-            aria-hidden
-            className="text-muted-ink pointer-events-none absolute z-[5] font-mono text-[11px]"
-            style={{
-              left: x,
-              bottom: footY(x + LETTER_W / 2, w),
-              width: LETTER_W,
-              transformOrigin: "center bottom",
-              transform: `rotate(${l.rot}deg)`,
-              transition: "transform 280ms cubic-bezier(0.2, 0.9, 0.32, 1)",
-            }}
-          >
-            {l.ch === " " ? "\u00A0" : l.ch}
-          </span>
-        );
-      })}
-    </>
   );
 }
 
@@ -829,14 +783,150 @@ function SignatureRow({
   );
 }
 
+function applyTrick(s: Scene, muted: boolean) {
+  const id = s.trick;
+  if (!id) return;
+  s.trickT += 1;
+  const t = s.trickT / s.trickDur;
+  if (t >= 1) {
+    parkBall(s);
+    s.trick = null;
+    s.trickCol = COL_TRAP;
+    s.kicking = false;
+    s.pauseT = 70 + Math.floor(Math.random() * 40);
+    s.hop = 0;
+    s.walkVel = 0;
+    if (s.juggleN > 0) {
+      s.speech = `${s.juggleN}.`;
+      s.speechT = 80;
+    }
+    return;
+  }
+
+  const cx = s.mascotX + MASCOT_W / 2;
+  const floor = GROUND + BALL_R;
+  const prevX = s.ballX;
+  const prevY = s.ballY;
+
+  if (id === "dribble") {
+    const dest =
+      s.facing === 1
+        ? Math.min(s.trickFromX + 56, playRight(s.w) - MASCOT_W)
+        : Math.max(s.trickFromX - 56, playLeft(s.w));
+    s.mascotX = lerp(s.trickFromX, dest, easeInOut(t));
+    s.walkVel = s.mascotX - s.trickFromX > 0 ? 0.8 : -0.8;
+    s.walkPhase += 0.028;
+    const n = 5;
+    const u = t * n;
+    const f = u - Math.floor(u);
+    const lift = parabola(f, f < 0.5 ? 12 : 7);
+    s.ballX = cx + s.facing * (12 + 5 * Math.sin(t * Math.PI * n));
+    s.ballY = floor + lift;
+    s.kicking = lift > 5;
+    s.trickCol = lift > 6 ? COL_DRIB_B : COL_DRIB_A;
+    s.hop = 0;
+    if (f < 0.08 && lift > 4) playTone(muted, 240, 0.025, "sine", 0.018);
+  } else if (id === "juggle") {
+    const hits = [
+      { h: 38, col: COL_JUG_R },
+      { h: 36, col: COL_JUG_L },
+      { h: 40, col: COL_JUG_R },
+      { h: 36, col: COL_JUG_L },
+      { h: 54, col: COL_JUG_K },
+      { h: 34, col: COL_JUG_R },
+    ];
+    const seg = t * hits.length;
+    const i = Math.min(hits.length - 1, Math.floor(seg));
+    const f = seg - Math.floor(seg);
+    const hit = hits[i]!;
+    const last = i === hits.length - 1 && f > 0.72;
+    s.ballX = cx + s.facing * (last ? lerp(14, 12, (f - 0.72) / 0.28) : 15);
+    s.ballY = last
+      ? lerp(floor + parabola(0.72, hit.h), floor, (f - 0.72) / 0.28)
+      : floor + parabola(f, hit.h);
+    s.trickCol = last ? COL_TRAP : hit.col;
+    s.kicking = !last && (f < 0.18 || f > 0.82);
+    s.hop = !last && f < 0.2 ? 2.2 : 0;
+    s.walkVel = 0;
+    if (f < 0.06 && s.juggleN === i) {
+      s.juggleN = i + 1;
+      s.speech = `${s.juggleN}.`;
+      s.speechT = 40;
+      playTone(muted, 300 + i * 24, 0.03, "sine", 0.022);
+    }
+  } else if (id === "rainbow") {
+    if (t < 0.2) {
+      const u = t / 0.2;
+      s.trickCol = COL_RAIN_W;
+      s.ballX = cx + s.facing * lerp(12, -14, easeInOut(u));
+      s.ballY = floor + parabola(u, 8);
+      s.kicking = false;
+      s.hop = 0;
+    } else if (t < 0.78) {
+      const u = (t - 0.2) / 0.58;
+      s.trickCol = u < 0.35 ? COL_RAIN_U : u < 0.7 ? COL_HEEL : COL_IDLE;
+      s.kicking = u < 0.4;
+      s.hop = u < 0.45 ? 6 : 0;
+      s.ballX = cx + s.facing * lerp(-14, 18, easeInOut(u));
+      s.ballY = floor + parabola(u, MASCOT_H + 16);
+    } else {
+      const u = (t - 0.78) / 0.22;
+      s.trickCol = COL_TRAP;
+      s.kicking = false;
+      s.hop = 0;
+      s.ballX = cx + s.facing * lerp(16, 12, u);
+      s.ballY = lerp(floor + 8, floor, easeInOut(u));
+    }
+    s.walkVel = 0;
+  } else {
+    if (t < 0.82) {
+      const a = easeInOut(t / 0.82) * Math.PI * 2;
+      s.trickCol = a < 1.2 ? COL_AROUND : a < 3.4 ? COL_HEEL : COL_JUG_R;
+      s.kicking = true;
+      s.hop = Math.sin(a) > 0.4 ? 2 : 0;
+      s.ballX = cx + s.facing * (13 * Math.cos(a));
+      s.ballY = floor + 8 + 20 * Math.max(0, Math.sin(a));
+    } else {
+      const u = (t - 0.82) / 0.18;
+      s.trickCol = COL_TRAP;
+      s.kicking = false;
+      s.hop = 0;
+      s.ballX = lerp(s.ballX, cx + s.facing * 12, u);
+      s.ballY = lerp(s.ballY, floor, easeInOut(u));
+    }
+    s.walkVel = 0;
+  }
+
+  s.ballX = clamp(s.ballX, ballMinX(), ballMaxX(s.w));
+  s.ballY = Math.max(floor, s.ballY);
+  s.ballSpin += Math.hypot(s.ballX - prevX, s.ballY - prevY) * 7;
+}
+
+function poseForReduced(s: Scene) {
+  s.walkVel = 0;
+  s.bob = 0;
+  s.turnT = 0;
+  s.hop = 0;
+  s.hopVy = 0;
+  stopTrick(s);
+  s.activity = "soccer";
+  s.pending = "soccer";
+  s.targetX = null;
+  s.mascotX = pitchHome(s.w);
+  s.facing = 1;
+  parkBall(s);
+  s.letters = stillLetters();
+}
+
 function initialScene(light: boolean): Scene {
   return {
     w: 720,
     scale: 1,
     ballX: 320,
-    ballY: ARC_BASE + BALL_R,
+    ballY: GROUND + BALL_R,
     ballVx: 0,
     ballVy: 0,
+    ballSpin: 0,
     mascotX: sitDeskX(),
     facing: -1,
     walk: 0,
@@ -845,15 +935,11 @@ function initialScene(light: boolean): Scene {
     idlePhase: 0,
     turnT: 0,
     bob: 0,
-    score: 0,
     letters: stillLetters(),
     hint: null,
     kicking: false,
-    heading: false,
     hop: 0,
     hopVy: 0,
-    lastTouch: null,
-    skills: 0,
     lampOn: !light,
     coding: 80,
     playing: 0,
@@ -862,7 +948,6 @@ function initialScene(light: boolean): Scene {
     activity: "desk",
     pending: "desk",
     targetX: null,
-    kickCd: 0,
     lookT: 220,
     lifeT: 0,
     lift: 0,
@@ -873,6 +958,15 @@ function initialScene(light: boolean): Scene {
     lastFixIndex: 0,
     fixPass: "approach",
     letterGuard: 0,
+    trick: null,
+    trickT: 0,
+    trickDur: 0,
+    trickFromX: 0,
+    trickCol: -1,
+    pauseT: 0,
+    juggleN: 0,
+    trickI: 0,
+    queuedTrick: null,
   };
 }
 
@@ -917,11 +1011,7 @@ export function SoccerPlayground({
       reducedRef.current = mq.matches;
       setReduced(mq.matches);
       const sc = scene.current;
-      if (sc && mq.matches) {
-        sc.letters = stillLetters();
-        sc.walkVel = 0;
-        sc.bob = 0;
-      }
+      if (sc && mq.matches) poseForReduced(sc);
     };
     mq.addEventListener("change", onMq);
 
@@ -935,27 +1025,24 @@ export function SoccerPlayground({
         s.w = w;
         s.scale = sceneScale;
         if (s.activity === "studio" && !showStudio(w)) {
-          s.activity = "idle";
-          s.pending = "idle";
+          s.activity = "soccer";
+          s.pending = "soccer";
           s.playing = 0;
           stopStudioBeat();
         }
-        if (drag.current == null && s.targetX == null) {
+        if (drag.current == null && s.targetX == null && !s.trick) {
           if (s.activity === "desk") s.mascotX = sitDeskX();
           else if (s.activity === "studio") s.mascotX = sitStudioX(w);
         }
-        if (drag.current !== "ball") {
-          const floor = groundAt(s.ballX, w) + BALL_R;
-          if (s.ballY < floor) s.ballY = floor;
-        }
+        if (drag.current !== "ball" && s.ballY < GROUND + BALL_R) s.ballY = GROUND + BALL_R;
       } else {
         const next = initialScene(light);
         next.w = w;
         next.scale = sceneScale;
-        next.ballX = ballResetX(w);
-        next.ballY = groundAt(next.ballX, w) + BALL_R;
         next.mascotX = sitDeskX();
-        if (reducedMotion) next.letters = stillLetters();
+        next.ballX = pitchHome(w) + MASCOT_W;
+        next.ballY = GROUND + BALL_R;
+        if (reducedMotion) poseForReduced(next);
         scene.current = next;
       }
     };
@@ -975,7 +1062,7 @@ export function SoccerPlayground({
       const s = scene.current;
       if (!s || !entry?.isIntersecting) return;
       if (reducedRef.current) {
-        s.letters = stillLetters();
+        poseForReduced(s);
         s.fixPlayed = true;
         return;
       }
@@ -1015,10 +1102,6 @@ export function SoccerPlayground({
 
   const tap = useRef(true);
 
-  const kickBall = (s: Scene, towardGoal = false) => {
-    playContact(s, mutedRef.current, towardGoal);
-  };
-
   const replayLetters = () => {
     const s = scene.current;
     if (!s) return;
@@ -1047,6 +1130,7 @@ export function SoccerPlayground({
     s.hint = null;
     s.lift = kind === "mascot" ? 10 : 0;
     s.targetX = null;
+    if (kind === "mascot") stopTrick(s);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -1059,15 +1143,13 @@ export function SoccerPlayground({
     const x = (e.clientX - rect.left) / sc;
     const y = (rect.height - (e.clientY - rect.top)) / sc;
     const now = performance.now();
-    const dt = Math.max(8, now - last.current.t);
     if (Math.hypot(e.clientX - last.current.x, e.clientY - last.current.y) > 5) tap.current = false;
     if (kind === "ball") {
-      const prevY = (rect.height - (last.current.y - rect.top)) / sc;
-      s.ballVx = ((x - (last.current.x - rect.left) / sc) / dt) * 16;
-      s.ballVy = ((y - prevY) / dt) * 16;
-      s.ballX = clamp(x, sceneLeft() + BALL_R, ballMaxX(s.w));
-      const floor = groundAt(s.ballX, s.w) + BALL_R;
-      s.ballY = clamp(y, floor, floor + GOAL_H + 20);
+      s.ballX = clamp(x, ballMinX(), ballMaxX(s.w));
+      s.ballY = clamp(y, GROUND + BALL_R, GROUND + MASCOT_H + 24);
+      s.ballVx = 0;
+      s.ballVy = 0;
+      stopTrick(s);
     } else {
       const prevX = s.mascotX;
       s.mascotX = clamp(x - MASCOT_W / 2, sceneLeft(), sceneRight(s.w) - MASCOT_W);
@@ -1078,7 +1160,6 @@ export function SoccerPlayground({
       s.targetX = null;
       s.lift = 10;
       stopStudioBeat();
-      if (nearBall(s, 8)) playContact(s, mutedRef.current, true);
       const zone = dropZone(s);
       s.hint =
         zone === "desk"
@@ -1102,23 +1183,28 @@ export function SoccerPlayground({
       s.hint = null;
       s.walkVel = 0;
       if (tap.current) {
-        if (s.activity === "desk" || s.activity === "studio") {
-          s.speech = pickLine("mascot");
+        if (reducedRef.current) {
+          s.speech = pickLine();
           s.speechT = 100;
         } else {
-          s.speech = pickLine("mascot");
-          s.speechT = 120;
-          playTone(mutedRef.current, 240, 0.05, "square", 0.03);
-          if (nearBall(s, 20)) kickBall(s, true);
+          requestTrick(s, mutedRef.current);
         }
       } else {
         const zone = dropZone(s);
         if (zone === "idle") {
-          const inPitch = s.mascotX > pitchLeft() - 20 && s.mascotX < pitchRight(s.w) + 20;
+          const inPitch = s.mascotX > playLeft(s.w) - 20 && s.mascotX < playRight(s.w) + 20;
           settle(s, inPitch ? "soccer" : "idle", mutedRef.current);
         } else {
           settle(s, zone, mutedRef.current);
         }
+      }
+    } else if (kind === "ball") {
+      if (tap.current && !reducedRef.current) {
+        const pick: TrickId = s.trickI % 2 === 0 ? "juggle" : "rainbow";
+        s.trickI += 1;
+        requestTrick(s, mutedRef.current, pick);
+      } else {
+        s.ballY = Math.max(s.ballY, GROUND + BALL_R);
       }
     }
   };
@@ -1128,11 +1214,14 @@ export function SoccerPlayground({
     const s = scene.current;
     const rect = root.current?.getBoundingClientRect();
     if (!s || !rect) return;
-    sendTo(s, (e.clientX - rect.left) / s.scale - MASCOT_W / 2, "idle");
+    const x = (e.clientX - rect.left) / s.scale - MASCOT_W / 2;
+    const mid = x + MASCOT_W / 2;
+    const next: Activity =
+      mid > playLeft(s.w) - 10 && mid < playRight(s.w) + 10 ? "soccer" : "idle";
+    sendTo(s, x, next);
   };
 
   const s = frame;
-  const gx = goalX(s.w);
   const dx = deskX();
   const sx = studioX(s.w);
   const sit = s.activity === "desk" || s.activity === "studio";
@@ -1140,20 +1229,16 @@ export function SoccerPlayground({
   const studioVisible = showStudio(s.w);
   const lampCX = lampX() + LAMP_W / 2;
   const deskCX = dx + DESK_W / 2;
-  const goalCX = gx + GOAL_W / 2;
   const studioCX = sx + STUDIO_W / 2;
   const mascotCX = s.mascotX + MASCOT_W / 2;
-  const lampY = footY(lampCX, s.w);
-  const deskY = footY(deskCX, s.w);
-  const goalY = footY(goalCX, s.w);
-  const studioY = footY(studioCX, s.w);
-  const mascotY = footY(mascotCX, s.w);
+  const ballH = Math.max(0, s.ballY - (GROUND + BALL_R));
+  const ballShadow = clamp(1 - ballH / 86, 0.32, 1);
   const place =
     s.activity === "desk"
       ? "he's at the desk."
       : s.activity === "studio"
         ? "he's in the studio."
-        : s.activity === "soccer"
+        : s.activity === "soccer" || s.trick
           ? "he's on the pitch."
           : s.activity === "fix" || s.pending === "fix"
             ? "he's setting type."
@@ -1177,26 +1262,43 @@ export function SoccerPlayground({
               transform: `scale(${sc})`,
               transformOrigin: "top left",
             }}
-            aria-label="Playground. He stays at a station until you grab him or click a spot. Tap the signature to straighten the letters."
+            aria-label="Playground. He juggles in the open floor. Grab him or click a spot. Tap the signature to straighten the letters."
             onPointerDown={onGroundPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
           >
-            <ArcGround w={s.w} h={SCENE_H} />
-            <ContactShadow x={lampCX} y={lampY} rx={10} />
-            <ContactShadow x={deskCX} y={deskY} rx={28} />
-            <ContactShadow x={goalCX} y={goalY} rx={16} />
-            {studioVisible && <ContactShadow x={studioCX} y={studioY} rx={22} />}
-            <ContactShadow x={mascotCX} y={mascotY} rx={12} />
-            <ContactShadow x={s.ballX} y={footY(s.ballX, s.w)} rx={7} />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute"
+              style={{
+                left: sceneLeft() - 6,
+                width: Math.max(140, sceneRight(s.w) - sceneLeft() + 12),
+                bottom: GROUND - 4,
+                height: 6,
+              }}
+            >
+              <div className="bg-ink/25 h-px w-full" />
+              <div className="bg-ink/12 h-px w-full" />
+              <div className="bg-ink/[0.07] h-[3px] w-full" />
+            </div>
+            <ContactShadow x={lampCX} y={GROUND} rx={10} />
+            <ContactShadow x={deskCX} y={GROUND} rx={28} />
+            {studioVisible && <ContactShadow x={studioCX} y={GROUND} rx={22} />}
+            <ContactShadow x={mascotCX} y={GROUND} rx={12} />
+            <ContactShadow
+              x={s.ballX}
+              y={GROUND}
+              rx={7 * ballShadow}
+              opacity={0.1 + 0.16 * ballShadow}
+            />
 
             <button
               type="button"
               className="absolute z-[6] cursor-crosshair"
               style={{
                 left: lampX() - (LAMP_HIT_W - LAMP_W) / 2,
-                bottom: lampY,
+                bottom: GROUND,
                 width: LAMP_HIT_W,
                 height: LAMP_H,
               }}
@@ -1234,7 +1336,7 @@ export function SoccerPlayground({
                 className="pointer-events-none absolute z-[5]"
                 style={{
                   left: lampX() - 16,
-                  bottom: lampY + 18,
+                  bottom: GROUND + 18,
                   width: 56,
                   height: 64,
                   background:
@@ -1247,7 +1349,7 @@ export function SoccerPlayground({
             <button
               type="button"
               className="absolute cursor-crosshair"
-              style={{ left: dx, bottom: deskY, width: DESK_W, height: DESK_H }}
+              style={{ left: dx, bottom: GROUND, width: DESK_W, height: DESK_H }}
               aria-label="Coding desk"
               onClick={() => {
                 if (!scene.current) return;
@@ -1272,11 +1374,13 @@ export function SoccerPlayground({
 
             <span className="sr-only">{SIGNATURE}</span>
             {inSceneLetters && (
-              <ArcLetters
+              <SignatureRow
                 letters={s.letters}
-                w={s.w}
                 onActivate={replayLetters}
                 onHover={hoverLetters}
+                letterWidth={LETTER_W}
+                className="text-muted-ink absolute z-[5] cursor-pointer font-mono text-[11px] whitespace-pre"
+                style={{ left: letterStart(s.w), bottom: GROUND }}
               />
             )}
 
@@ -1284,7 +1388,7 @@ export function SoccerPlayground({
               className="text-ink absolute z-10 flex touch-none items-end justify-center"
               style={{
                 left: s.mascotX - (SPRITE_W - MASCOT_W) / 2,
-                bottom: mascotY + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
+                bottom: GROUND + s.lift + s.hop + (sit ? 0 : s.bob * 0.2),
                 width: SPRITE_W,
                 height: MASCOT_H + 10,
                 cursor: s.lift > 0 ? "grabbing" : "grab",
@@ -1305,7 +1409,6 @@ export function SoccerPlayground({
               )}
               <PixelMascot
                 kicking={s.kicking}
-                heading={s.heading}
                 facing={s.facing}
                 sit={sit && s.lift === 0}
                 bending={
@@ -1320,6 +1423,7 @@ export function SoccerPlayground({
                 turnT={s.turnT}
                 bob={s.bob}
                 reduced={reduced}
+                trickCol={s.trickCol}
               />
               {s.speech && (
                 <span
@@ -1349,52 +1453,22 @@ export function SoccerPlayground({
               }}
             >
               <div className="pointer-events-none flex h-full items-end justify-center">
-                <PixelProp src={PROP_BALL} width={BALL_R * 2} height={BALL_R * 2} />
+                <div
+                  style={{
+                    transform: `rotate(${s.ballSpin}deg)`,
+                    transformOrigin: "center",
+                  }}
+                >
+                  <PixelProp src={PROP_BALL} width={BALL_R * 2} height={BALL_R * 2} />
+                </div>
               </div>
             </div>
-
-            <button
-              type="button"
-              className="text-ink absolute z-0 cursor-crosshair"
-              style={{ left: gx, bottom: goalY, width: GOAL_W, height: GOAL_H }}
-              aria-label="Walk to the goal"
-              onClick={() => {
-                const sc = scene.current;
-                if (!sc) return;
-                sendTo(sc, Math.min(sc.ballX - MASCOT_W / 2, gx - MASCOT_W - 4), "soccer");
-                if (nearBall(sc, 24)) kickBall(sc, true);
-              }}
-              onPointerEnter={() => {
-                if (scene.current) scene.current.hint = "soccer";
-              }}
-              onPointerLeave={() => {
-                if (scene.current && !drag.current) scene.current.hint = null;
-              }}
-            >
-              <PixelProp src={PROP_GOAL} width={GOAL_W} height={GOAL_H} />
-              {s.score > 0 && (
-                <span
-                  className="text-ink absolute left-1/2 -translate-x-1/2 font-mono text-[11px] tabular-nums"
-                  style={{ top: -14 }}
-                >
-                  {s.score}
-                </span>
-              )}
-              {s.skills > 0 && (
-                <span
-                  className="text-muted-ink pointer-events-none absolute left-1/2 -translate-x-1/2 font-mono text-[9px] tabular-nums"
-                  style={{ top: -26 }}
-                >
-                  {s.skills} skill{s.skills === 1 ? "" : "s"}
-                </span>
-              )}
-            </button>
 
             {studioVisible && (
               <button
                 type="button"
                 className="text-ink absolute cursor-crosshair"
-                style={{ left: sx, bottom: studioY, width: STUDIO_W, height: STUDIO_H }}
+                style={{ left: sx, bottom: GROUND, width: STUDIO_W, height: STUDIO_H }}
                 aria-label="Music studio"
                 onClick={() => {
                   if (!scene.current) return;
@@ -1422,57 +1496,51 @@ export function SoccerPlayground({
                 <HintChip
                   text="grab."
                   x={mascotCX}
-                  y={mascotY + MASCOT_H + 10}
+                  y={GROUND + MASCOT_H + 10}
                   show={s.hoverMascot && s.lift === 0 && !s.speech}
                 />
                 <HintChip
                   text="light."
                   x={lampCX}
-                  y={lampY + LAMP_H + 8}
+                  y={GROUND + LAMP_H + 8}
                   show={s.hint === "lamp"}
                 />
                 <HintChip
                   text="the work."
                   x={deskCX}
-                  y={deskY + DESK_H + 8}
+                  y={GROUND + DESK_H + 8}
                   show={s.hint === "desk" && s.lift === 0}
                 />
                 <HintChip
                   text="drop to code."
                   x={deskCX}
-                  y={deskY + DESK_H + 8}
+                  y={GROUND + DESK_H + 8}
                   show={s.hint === "desk" && s.lift > 0}
                 />
                 <HintChip
-                  text="the pitch."
-                  x={goalCX}
-                  y={goalY + GOAL_H + 8}
-                  show={s.hint === "soccer" && s.lift === 0}
-                />
-                <HintChip
-                  text="drop to play."
-                  x={goalCX}
-                  y={goalY + GOAL_H + 8}
-                  show={s.hint === "soccer" && s.lift > 0}
-                />
-                <HintChip
-                  text="flick the ball."
+                  text="try a trick."
                   x={s.ballX}
                   y={s.ballY + 14}
                   show={s.hint === "ball"}
+                />
+                <HintChip
+                  text="drop to play."
+                  x={mascotCX}
+                  y={GROUND + MASCOT_H + 8}
+                  show={s.hint === "soccer" && s.lift > 0}
                 />
                 {studioVisible && (
                   <>
                     <HintChip
                       text="after hours."
                       x={studioCX}
-                      y={studioY + STUDIO_H + 8}
+                      y={GROUND + STUDIO_H + 8}
                       show={s.hint === "studio" && s.lift === 0}
                     />
                     <HintChip
                       text="drop to make music."
                       x={studioCX}
-                      y={studioY + STUDIO_H + 8}
+                      y={GROUND + STUDIO_H + 8}
                       show={s.hint === "studio" && s.lift > 0}
                     />
                   </>
@@ -1502,15 +1570,12 @@ export function SoccerPlayground({
   );
 }
 
-function pickLine(kind: "mascot" | "goal") {
-  const mascot = ["make it obvious.", "one more pass.", "ship it.", "trust the scan."];
-  const goal = ["that's in.", "keep it simple.", "again."];
-  const pool = kind === "goal" ? goal : mascot;
-  return pool[Math.floor(Math.random() * pool.length)] ?? "ship it.";
+function pickLine() {
+  const mascot = ["make it obvious.", "one more touch.", "ship it.", "trust the scan."];
+  return mascot[Math.floor(Math.random() * mascot.length)] ?? "ship it.";
 }
 
 function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, reduced = false) {
-  const gx = goalX(s.w);
   const sitting = s.activity === "desk" || s.activity === "studio";
   const fixing = s.activity === "fix" || s.pending === "fix";
 
@@ -1518,11 +1583,14 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
   else s.speech = "";
   if (s.playing > 0) s.playing -= 1;
   if (s.coding > 0) s.coding -= 1;
-  if (s.kickCd > 0) s.kickCd -= 1;
+  if (s.trickCol === COL_TRAP && !s.trick) {
+    s.pauseT = Math.max(s.pauseT, 1);
+    if (s.pauseT === 1) s.trickCol = -1;
+  }
   if (sitting) {
     s.hop = 0;
     s.hopVy = 0;
-  } else if (s.hop > 0 || s.hopVy !== 0) {
+  } else if (!s.trick && (s.hop > 0 || s.hopVy !== 0)) {
     s.hop += s.hopVy;
     s.hopVy -= 0.4;
     if (s.hop <= 0) {
@@ -1536,23 +1604,11 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
   if (s.activity === "studio") s.playing = Math.max(s.playing, 4);
 
   if (reduced) {
-    s.walkVel = 0;
-    s.bob = 0;
-    s.turnT = 0;
-    s.hop = 0;
-    s.hopVy = 0;
-    if (s.pending === "fix" || s.activity === "fix") {
-      s.letters = stillLetters();
-      s.pending = "desk";
-      s.activity = "desk";
-      s.targetX = null;
-      s.mascotX = sitDeskX();
-    } else if (s.targetX != null) {
-      s.mascotX = s.targetX;
-      settle(s, s.pending, muted);
-    }
+    poseForReduced(s);
   } else if (dragging === "mascot") {
     s.walk += 0.16;
+  } else if (s.trick) {
+    applyTrick(s, muted);
   } else if (s.targetX != null) {
     s.activity = "walk";
     const pushing = fixing ? rightPassedLetters(s, muted) : false;
@@ -1570,7 +1626,7 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
           s.fixPass = "approach";
           s.fixHold = 42;
           s.activity = "fix";
-          s.pending = "desk";
+          s.pending = "soccer";
           s.targetX = null;
           s.walkVel = 0;
           s.letterGuard = 200;
@@ -1584,23 +1640,29 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     s.walkVel *= 0.78;
     s.bob *= 0.85;
     if (s.fixHold > 0) s.fixHold -= 1;
-    else sendTo(s, sitDeskX(), "desk");
+    else sendTo(s, pitchHome(s.w), "soccer");
   } else if (s.activity === "soccer" && !reduced) {
-    const left = pitchLeft();
-    const right = pitchRight(s.w);
-    const behind = Math.sign(gx - s.ballX) || 1;
-    const high = s.ballY > groundAt(s.ballX, s.w) + 36;
-    const want = clamp(s.ballX - MASCOT_W / 2 - (high ? 0 : 10) * behind, left, right);
-    if (Math.abs(want - s.mascotX) > 1.1) moveToward(s, want, 1.55);
-    else s.walkVel *= 0.8;
+    if (s.pauseT > 0) {
+      s.pauseT -= 1;
+      s.walkVel *= 0.8;
+      s.bob *= 0.86;
+      s.trickCol = s.pauseT > 12 ? COL_TRAP : -1;
+      parkBall(s);
+    } else {
+      startTrick(s, TRICK_ORDER[s.trickI % TRICK_ORDER.length]!, muted);
+      s.trickI += 1;
+    }
   } else if (sitting) {
     s.lifeT += 1;
     s.walkVel = 0;
     s.bob = 0;
     if (s.activity === "desk" && s.lifeT % 42 === 0) playTone(muted, 1400, 0.02, "square", 0.012);
     if (s.activity === "desk" && s.lifeT % 520 === 0 && s.speechT <= 0) {
-      s.speech = Math.random() < 0.55 ? "building Park'r." : pickLine("mascot");
+      s.speech = Math.random() < 0.55 ? "building Park'r." : pickLine();
       s.speechT = 130;
+    }
+    if (s.lifeT > dwellFor(s.activity) && s.targetX == null) {
+      sendTo(s, pitchHome(s.w), "soccer");
     }
   } else {
     s.walkVel *= 0.84;
@@ -1612,39 +1674,31 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
     }
   }
 
-  if (dragging !== "ball" && !sitting && !fixing && s.letterGuard <= 0) {
-    playContact(s, muted, true);
-  }
-  if (s.kickCd <= 10) s.kicking = false;
-  if (s.kickCd <= 8) s.heading = false;
+  if (!s.trick) s.kicking = false;
 
-  if (dragging !== "ball") {
+  if (dragging !== "ball" && !s.trick) {
     s.ballVy -= 0.42;
     s.ballX += s.ballVx;
     s.ballY += s.ballVy;
-    s.ballVx *= 0.992;
-
-    const floor = groundAt(s.ballX, s.w) + BALL_R;
+    s.ballVx *= 0.988;
+    s.ballSpin += s.ballVx * 6;
+    const floor = GROUND + BALL_R;
     if (s.ballY <= floor) {
       s.ballY = floor;
-      if (s.ballVy < 0) s.ballVy *= -0.58;
-      s.ballVx *= 0.94;
-      s.ballVx += -groundSlope(s.ballX, s.w) * 0.55;
-      if (Math.abs(s.ballVy) < 0.35) s.ballVy = 0;
+      if (s.ballVy < 0) s.ballVy *= -0.52;
+      s.ballVx *= 0.9;
+      if (Math.abs(s.ballVy) < 0.32) s.ballVy = 0;
     }
-    const minX = sceneLeft() + BALL_R;
-    if (s.ballX < minX) {
-      s.ballX = minX;
-      s.ballVx *= -0.7;
+    if (s.ballX < ballMinX()) {
+      s.ballX = ballMinX();
+      s.ballVx *= -0.65;
     }
-    const maxX = ballMaxX(s.w);
-    if (s.ballX > maxX) {
-      s.ballX = maxX;
-      if (s.ballVx > 0) s.ballVx *= -0.4;
+    if (s.ballX > ballMaxX(s.w)) {
+      s.ballX = ballMaxX(s.w);
+      s.ballVx *= -0.65;
     }
-    const ceiling = groundAt(s.ballX, s.w) + GOAL_H + 20;
-    if (s.ballY > ceiling) {
-      s.ballY = ceiling;
+    if (s.ballY > GROUND + MASCOT_H + 28) {
+      s.ballY = GROUND + MASCOT_H + 28;
       s.ballVy *= -0.4;
     }
   }
@@ -1659,10 +1713,14 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       const hitBall =
         lettersInScene(s.w) &&
         Math.abs(s.ballX - lx) < 7 &&
-        s.ballY < groundAt(lx, s.w) + BALL_R + 8 &&
+        s.ballY < GROUND + BALL_R + 8 &&
         Math.abs(s.ballVx) > 0.9;
       const hitMascot =
-        lettersInScene(s.w) && !sitting && Math.abs(mx - lx) < 8 && Math.abs(s.walkVel) > 0.55;
+        lettersInScene(s.w) &&
+        !sitting &&
+        !s.trick &&
+        Math.abs(mx - lx) < 8 &&
+        Math.abs(s.walkVel) > 0.55;
       if (hitBall || hitMascot) {
         const dir = (hitBall ? s.ballX < lx : mx < lx) ? 1 : -1;
         return { ...l, rot: dir * (76 + Math.min(18, Math.abs(s.ballVx) * 4)) };
@@ -1670,30 +1728,4 @@ function step(s: Scene, dragging: "ball" | "mascot" | null, muted: boolean, redu
       return l;
     });
   }
-
-  const goalFloor = groundAt(gx + GOAL_W / 2, s.w);
-  const inGoal =
-    s.ballX > gx + 6 &&
-    s.ballX <= ballMaxX(s.w) + 0.5 &&
-    s.ballY > goalFloor + BALL_R - 1 &&
-    s.ballY < goalFloor + GOAL_H - 4;
-
-  if (inGoal && !goalLock) {
-    goalLock = true;
-    s.score += 1;
-    s.speech = s.lastTouch === "head" ? "header." : pickLine("goal");
-    s.speechT = 130;
-    playTone(muted, 520, 0.08, "square", 0.05);
-    playTone(muted, 780, 0.1, "square", 0.04);
-    window.setTimeout(() => {
-      s.ballX = ballResetX(s.w);
-      s.ballY = groundAt(s.ballX, s.w) + BALL_R;
-      s.ballVx = 0;
-      s.ballVy = 0;
-      s.lastTouch = null;
-      goalLock = false;
-    }, 700);
-  }
-
-  if (!inGoal && s.ballX < gx - 4) goalLock = false;
 }
